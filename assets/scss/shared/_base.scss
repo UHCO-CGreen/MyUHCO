@@ -1,0 +1,17 @@
+@use "./brand";
+
+:root {
+  --uhco-primary:       #{brand.$primary};
+  --uhco-primary-dark:  #{brand.$primary-dark};
+  --uhco-ink:           #{brand.$portal-ink};
+  --uhco-muted:         #{brand.$portal-muted};
+  --uhco-surface:       #{brand.$portal-surface};
+  --uhco-surface-soft:  #{brand.$portal-surface-soft};
+  --uhco-border:        #{brand.$portal-border};
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}

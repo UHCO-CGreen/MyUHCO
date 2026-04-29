@@ -1,0 +1,14 @@
+{
+  "name": "myuhco-portal-styles",
+  "private": true,
+  "scripts": {
+    "build": "sass --no-source-map --style=compressed --load-path=node_modules assets/scss/portal.scss:css/portal-style.css",
+    "watch:styles": "sass --watch --no-source-map --style=expanded --load-path=node_modules assets/scss/portal.scss:css/portal-style.css"
+  },
+  "dependencies": {
+    "bootstrap": "^5.3.8"
+  },
+  "devDependencies": {
+    "sass": "^1.89.0"
+  }
+}

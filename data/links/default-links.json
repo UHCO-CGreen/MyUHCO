@@ -1,0 +1,32 @@
+{
+  "links": [
+    {
+      "id": "clinic-incident-form",
+      "title": "Clinic Incident Form",
+      "href": "#",
+      "section": "college-forms",
+      "sortOrder": 10
+    },
+    {
+      "id": "travel-request-form",
+      "title": "Travel Request Form",
+      "href": "#",
+      "section": "college-forms",
+      "sortOrder": 20
+    },
+    {
+      "id": "accessuh",
+      "title": "AccessUH",
+      "href": "/my-uhco/applications/accessuh",
+      "section": "other-links",
+      "sortOrder": 30
+    },
+    {
+      "id": "microsoft-365",
+      "title": "Microsoft 365",
+      "href": "/my-uhco/applications/microsoft-365",
+      "section": "other-links",
+      "sortOrder": 40
+    }
+  ]
+}

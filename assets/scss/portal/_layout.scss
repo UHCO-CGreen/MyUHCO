@@ -1,0 +1,92 @@
+// ── Portal layout & component styles ────────────────────────────────────────
+
+body#MyUHCO {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--uhco-ink);
+  background:
+    radial-gradient(circle at 80% -10%, #f9d7de 0%, rgba(249, 215, 222, 0) 42%),
+    radial-gradient(circle at -5% 110%, #d8ecff 0%, rgba(216, 236, 255, 0) 36%),
+    var(--uhco-surface-soft);
+}
+
+.mainContainer {
+  min-height: 100vh;
+}
+
+// ── Header / nav ─────────────────────────────────────────────────────────────
+
+.portal-header {
+  background: var(--uhco-surface);
+}
+
+.portal-logo {
+  width: min(350px, 72vw);
+  max-height: 58px;
+}
+
+.navbar .nav-link {
+  color: var(--uhco-ink);
+
+  &:hover,
+  &:focus {
+    color: var(--uhco-primary);
+  }
+}
+
+// Override Bootstrap primary button tokens with portal brand
+.btn-outline-primary {
+  --bs-btn-color:              var(--uhco-primary);
+  --bs-btn-border-color:       var(--uhco-primary);
+  --bs-btn-hover-bg:           var(--uhco-primary);
+  --bs-btn-hover-border-color: var(--uhco-primary);
+  --bs-btn-active-bg:          var(--uhco-primary-dark);
+  --bs-btn-active-border-color:var(--uhco-primary-dark);
+}
+
+// Quick-launch nav icons
+.ql-images {
+  width: 25px;
+  height: 25px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+// ── Main content ─────────────────────────────────────────────────────────────
+
+.portal-main {
+  position: relative;
+}
+
+.portal-card {
+  border: 1px solid var(--uhco-border);
+  background: linear-gradient(170deg, #ffffff 0%, #f9fbfd 100%);
+
+  h1 {
+    color: var(--uhco-ink);
+  }
+
+  .lead {
+    max-width: 75ch;
+    color: var(--uhco-muted) !important;
+  }
+}
+
+// ── Login card ───────────────────────────────────────────────────────────────
+
+.portal-login-card {
+  width: 100%;
+  max-width: 420px;
+}
+
+// ── Responsive adjustments ───────────────────────────────────────────────────
+
+@media (max-width: 991.98px) {
+  .navbar-nav {
+    padding-top: 0.75rem;
+  }
+
+  .navbar-nav .btn {
+    width: 100%;
+  }
+}

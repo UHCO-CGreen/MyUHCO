@@ -1,0 +1,61 @@
+{
+  "sourceUrl": "",
+  "quickDocsFolderUrl": "",
+  "documents": [
+    {
+      "id": "academic-calendar-2026",
+      "title": "Academic Calendar 2026",
+      "description": "Important academic dates and deadlines.",
+      "category": "Calendar",
+      "section": "quick-docs",
+      "audience": "all",
+      "updatedAt": "2026-04-01",
+      "href": "#",
+      "size": "PDF"
+    },
+    {
+      "id": "registration-calendar",
+      "title": "Registration Calendar",
+      "description": "Enrollment and registration milestones.",
+      "category": "Calendar",
+      "section": "quick-docs",
+      "audience": "all",
+      "updatedAt": "2026-04-10",
+      "href": "#",
+      "size": "PDF"
+    },
+    {
+      "id": "faculty-review-guidelines",
+      "title": "Faculty Review Guidelines",
+      "description": "Annual review and promotion documentation.",
+      "category": "Faculty",
+      "section": "faculty",
+      "audience": "faculty",
+      "updatedAt": "2026-04-12",
+      "href": "#",
+      "size": "PDF"
+    },
+    {
+      "id": "staff-operations-checklist",
+      "title": "Staff Operations Checklist",
+      "description": "Daily and weekly operations checklist for staff.",
+      "category": "Staff",
+      "section": "staff",
+      "audience": "staff",
+      "updatedAt": "2026-04-15",
+      "href": "#",
+      "size": "PDF"
+    },
+    {
+      "id": "student-clinical-requirements",
+      "title": "Student Clinical Requirements",
+      "description": "Clinical hour and documentation requirements.",
+      "category": "Students",
+      "section": "students",
+      "audience": "students",
+      "updatedAt": "2026-04-18",
+      "href": "#",
+      "size": "PDF"
+    }
+  ]
+}
