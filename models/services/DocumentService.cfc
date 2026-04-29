@@ -2,7 +2,14 @@
 
   <cffunction name="init" access="public" returntype="any" output="false">
     <cfargument name="manifestPath" type="string" required="false" default="">
+    <cfargument name="dropboxProvider" required="false" default="">
     <cfset variables.manifestPath = trim(arguments.manifestPath & "")>
+    <cfset variables.dropboxDocumentExtensions = "pdf,doc,docx,xls,xlsx,ppt,pptx,csv,txt,rtf">
+    <cfif isObject(arguments.dropboxProvider)>
+      <cfset variables.dropboxProvider = arguments.dropboxProvider>
+    <cfelse>
+      <cfset variables.dropboxProvider = new models.services.DropboxProvider().init()>
+    </cfif>
     <cfreturn this>
   </cffunction>
 
@@ -17,9 +24,32 @@
     <cfset var manifestPath = resolveManifestPath()>
     <cfset var manifestData = {}>
     <cfset var remoteData = {}>
+    <cfset var dropboxPath = "">
+    <cfset var folderData = {}>
 
     <cftry>
       <cfset manifestData = readJsonFile(manifestPath)>
+
+      <cfset dropboxPath = readRootValue(manifestData, "dropboxManifestPath")>
+      <cfif NOT len(dropboxPath)>
+        <cfset dropboxPath = readRootValue(manifestData, "dropboxPath")>
+      </cfif>
+
+      <cfif len(dropboxPath)>
+        <cfif reFindNoCase("\.json$", dropboxPath)>
+          <cfset manifestData = variables.dropboxProvider.downloadJson(dropboxPath)>
+          <cfset result.items = normalizeDocuments(manifestData)>
+          <cfset result.quickDocsFolderUrl = readRootValue(manifestData, "quickDocsFolderUrl")>
+          <cfset result.source = "dropbox-api-manifest">
+        <cfelse>
+          <cfset folderData = buildDocumentsFromDropboxFolder(dropboxPath, manifestData)>
+          <cfset result.items = folderData.items>
+          <cfset result.quickDocsFolderUrl = folderData.quickDocsFolderUrl>
+          <cfset result.source = "dropbox-api-folder">
+        </cfif>
+        <cfset result.success = true>
+        <cfreturn result>
+      </cfif>
 
       <cfif structKeyExists(manifestData, "sourceUrl") AND len(trim(manifestData.sourceUrl & ""))>
         <cfset remoteData = fetchRemoteManifest(trim(manifestData.sourceUrl & ""))>
@@ -171,6 +201,110 @@
     </cfif>
 
     <cfreturn readKey(arguments.payload, arguments.keyName)>
+  </cffunction>
+
+  <cffunction name="buildDocumentsFromDropboxFolder" access="private" returntype="struct" output="false">
+    <cfargument name="folderPath" type="string" required="true">
+    <cfargument name="manifestSeed" type="any" required="false" default="#structNew()#">
+
+    <cfset var out = { items = [], quickDocsFolderUrl = "" }>
+    <cfset var files = []>
+    <cfset var i = 0>
+    <cfset var f = {}>
+    <cfset var item = {}>
+    <cfset var title = "">
+    <cfset var section = "quick-docs">
+    <cfset var audience = "all">
+    <cfset var cleanRoot = trim(arguments.folderPath & "")>
+    <cfset var relPath = "">
+    <cfset var sizeText = "">
+    <cfset var maxItems = val(readRootValue(arguments.manifestSeed, "dropboxMaxItems"))>
+    <cfset var allowedExtensions = trim(readRootValue(arguments.manifestSeed, "dropboxAllowedExtensions") & "")>
+
+    <cfif maxItems LTE 0>
+      <cfset maxItems = 250>
+    </cfif>
+
+    <cfif NOT len(allowedExtensions)>
+      <cfset allowedExtensions = variables.dropboxDocumentExtensions>
+    </cfif>
+
+    <cfset files = variables.dropboxProvider.listFolderEntriesRecursive(
+      folderPath = arguments.folderPath,
+      allowedExtensions = allowedExtensions
+    )>
+
+    <!--- If strict extension filtering returns no rows, retry with all files. --->
+    <cfif arrayLen(files) EQ 0>
+      <cfset files = variables.dropboxProvider.listFolderEntriesRecursive(
+        folderPath = arguments.folderPath,
+        allowedExtensions = ""
+      )>
+    </cfif>
+
+    <cfif isStruct(arguments.manifestSeed)>
+      <cfset out.quickDocsFolderUrl = readRootValue(arguments.manifestSeed, "quickDocsFolderUrl")>
+    </cfif>
+    <cfif NOT len(out.quickDocsFolderUrl)>
+      <cfset out.quickDocsFolderUrl = cleanRoot>
+    </cfif>
+
+    <cfloop from="1" to="#arrayLen(files)#" index="i">
+      <cfif i GT maxItems>
+        <cfbreak>
+      </cfif>
+
+      <cfset f = files[i]>
+      <cfset title = reReplace(listFirst(f.filename, "."), "[_\-]+", " ", "all")>
+      <cfset relPath = replaceNoCase(f.path, cleanRoot, "", "one")>
+      <cfif left(relPath, 1) EQ "/">
+        <cfset relPath = right(relPath, len(relPath) - 1)>
+      </cfif>
+
+      <cfset section = "quick-docs">
+      <cfset audience = "all">
+      <cfif findNoCase("/quickdocs/", lCase("/" & relPath)) OR findNoCase("/quick-docs/", lCase("/" & relPath)) OR findNoCase("/quick docs/", lCase("/" & relPath))>
+        <cfset section = "quick-docs">
+        <cfset audience = "all">
+      <cfelseif findNoCase("/faculty docs/", lCase("/" & relPath)) OR findNoCase("/facultydocs/", lCase("/" & relPath)) OR findNoCase("/faculty/", lCase("/" & relPath))>
+        <cfset section = "faculty">
+        <cfset audience = "faculty">
+      <cfelseif findNoCase("/staff docs/", lCase("/" & relPath)) OR findNoCase("/staffdocs/", lCase("/" & relPath)) OR findNoCase("/staff/", lCase("/" & relPath))>
+        <cfset section = "staff">
+        <cfset audience = "staff">
+      <cfelseif findNoCase("/student docs/", lCase("/" & relPath)) OR findNoCase("/studentdocs/", lCase("/" & relPath)) OR findNoCase("/students/", lCase("/" & relPath))>
+        <cfset section = "students">
+        <cfset audience = "students">
+      </cfif>
+
+      <cfset sizeText = uCase(f.extension)>
+      <cfif len(trim(f.size & ""))>
+        <cfset sizeText = f.size & " bytes">
+      </cfif>
+
+      <cfset item = {
+        id = "dropbox-" & hash(lCase(f.path), "MD5"),
+        title = trim(title),
+        description = "Dropbox document",
+        category = uCase(f.extension),
+        section = section,
+        audience = audience,
+        updatedAt = trim(f.clientModified & ""),
+        href = "",
+        size = sizeText
+      }>
+
+      <cftry>
+        <cfset item.href = variables.dropboxProvider.getTemporaryLink(f.path)>
+        <cfcatch type="any">
+          <cfset item.href = "">
+        </cfcatch>
+      </cftry>
+
+      <cfset arrayAppend(out.items, item)>
+    </cfloop>
+
+    <cfreturn out>
   </cffunction>
 
 </cfcomponent>

@@ -256,8 +256,21 @@ if (linksResult.success) {
   }
 }
 
-docsPageSize = 2;
+docsPageSize = 5;
 linksPageSize = 6;
+
+function limitItems(required array items, numeric maxItems = 5) {
+  var out = [];
+  var i = 0;
+  var maxCount = arguments.maxItems;
+  if (maxCount LT 1) {
+    maxCount = 1;
+  }
+  for (i = 1; i LTE arrayLen(arguments.items) AND i LTE maxCount; i = i + 1) {
+    arrayAppend(out, arguments.items[i]);
+  }
+  return out;
+}
 
 function getNumericUrlPage(required string paramName) {
   var pageValue = 1;
@@ -331,6 +344,11 @@ function buildPageUrl(required string pageParam, required numeric pageValue) {
 
   return resultUrl;
 }
+
+quickDocs = limitItems(quickDocs, docsPageSize);
+facultyDocs = limitItems(facultyDocs, docsPageSize);
+staffDocs = limitItems(staffDocs, docsPageSize);
+studentDocs = limitItems(studentDocs, docsPageSize);
 
 quickDocsPage = paginateItems(quickDocs, "qdPage", docsPageSize);
 facultyDocsPage = paginateItems(facultyDocs, "fdPage", docsPageSize);
@@ -556,7 +574,7 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
                       <div class="d-flex justify-content-between align-items-center mb-2">
                         <h3 class="h6 text-uppercase text-muted mb-0">Quick Docs</h3>
                         <cfif structKeyExists(documentResult, "quickDocsFolderUrl") AND len(trim(documentResult.quickDocsFolderUrl & ""))>
-                          <a href="#encodeForHTMLAttribute(documentResult.quickDocsFolderUrl)#" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener noreferrer">Open Folder</a>
+                          <a href="documents.cfm?section=quick-docs" class="btn btn-sm btn-outline-secondary">View All Quick Docs</a>
                         </cfif>
                       </div>
                       <cfif quickDocsPage.totalItems EQ 0>
@@ -588,7 +606,10 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
 
                     <cfif canSeeAllUserTypeDocs OR userTypeKey EQ "faculty">
                       <div class="mb-4">
-                        <h3 class="h6 text-uppercase text-muted mb-2">Faculty Documents</h3>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                          <h3 class="h6 text-uppercase text-muted mb-0">Faculty Documents</h3>
+                          <a href="documents.cfm?section=faculty" class="btn btn-sm btn-outline-secondary">View All Faculty Docs</a>
+                        </div>
                         <cfif facultyDocsPage.totalItems EQ 0>
                           <p class="small text-secondary mb-0">No faculty documents available.</p>
                         <cfelse>
@@ -619,7 +640,10 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
 
                     <cfif canSeeAllUserTypeDocs OR userTypeKey EQ "staff">
                       <div class="mb-4">
-                        <h3 class="h6 text-uppercase text-muted mb-2">Staff Documents</h3>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                          <h3 class="h6 text-uppercase text-muted mb-0">Staff Documents</h3>
+                          <a href="documents.cfm?section=staff" class="btn btn-sm btn-outline-secondary">View All Staff Docs</a>
+                        </div>
                         <cfif staffDocsPage.totalItems EQ 0>
                           <p class="small text-secondary mb-0">No staff documents available.</p>
                         <cfelse>
@@ -650,7 +674,10 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
 
                     <cfif canSeeAllUserTypeDocs OR userTypeKey EQ "students">
                       <div>
-                        <h3 class="h6 text-uppercase text-muted mb-2">Student Documents</h3>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                          <h3 class="h6 text-uppercase text-muted mb-0">Student Documents</h3>
+                          <a href="documents.cfm?section=students" class="btn btn-sm btn-outline-secondary">View All Student Docs</a>
+                        </div>
                         <cfif studentDocsPage.totalItems EQ 0>
                           <p class="small text-secondary mb-0">No student documents available.</p>
                         <cfelse>

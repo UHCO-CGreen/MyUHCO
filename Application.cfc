@@ -11,8 +11,20 @@ component output="false" {
         application.portalAuthService = new models.services.AuthService();
         application.directoryService = new models.services.DirectoryService();
         application.dateHelper = new models.helpers.DateHelper();
+        application.appConfigService = new models.services.AppConfigService().init(
+            datasource = "UHCO_Identity_Admin",
+            tableName = "AppConfig",
+            keyColumn = "ConfigKey",
+            valueColumn = "ConfigValue",
+            appColumn = "",
+            appName = "myUHCO"
+        );
+        application.dropboxProvider = new models.services.DropboxProvider().init(
+            configReader = application.appConfigService
+        );
         application.documentService = new models.services.DocumentService(
-            manifestPath = expandPath("/data/documents/manifest.json")
+            manifestPath = expandPath("/data/documents/manifest.json"),
+            dropboxProvider = application.dropboxProvider
         );
         application.linkService = new models.services.LinkService(
             defaultManifestPath = expandPath("/data/links/default-links.json"),
@@ -124,6 +136,8 @@ component output="false" {
             !structKeyExists(application, "portalAuthService") OR
             !structKeyExists(application, "directoryService") OR
             !structKeyExists(application, "dateHelper") OR
+            !structKeyExists(application, "appConfigService") OR
+            !structKeyExists(application, "dropboxProvider") OR
             !structKeyExists(application, "documentService") OR
             !structKeyExists(application, "linkService")
         ) {
