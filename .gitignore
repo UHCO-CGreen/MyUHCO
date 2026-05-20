@@ -21,3 +21,18 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# Local build output
+build_output.log
+
+# Runtime cache
+data/cache/
+
+# Python local artifacts
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+coverage/
