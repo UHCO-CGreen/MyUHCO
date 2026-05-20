@@ -15,6 +15,27 @@
       "sortOrder": 20
     },
     {
+      "id": "news-story-submission-form",
+      "title": "News Story Submission Form",
+      "href": "https://forms.monday.com/forms/0f43b7390dbd6bdb4944eb04fd8c1209?r=use1",
+      "section": "college-forms",
+      "sortOrder": 30
+    },
+    {
+      "id": "clinic-equipment-repair-request-form",
+      "title": "Clinic Equipment Repair Request Form",
+      "href": "https://uhco.sjc1.qualtrics.com/jfe/form/SV_9n1X5HElcS8DbNA?user=[m]m.currentUser().get('fname')[/m] [m]m.currentUser().get('lname')[/m]&amp;useremail=[m]m.currentUser().get('email')[/m]&amp;type=Maintenance",
+      "section": "college-forms",
+      "sortOrder": 40
+    },
+    {
+      "id": "industry-community-partner-contact-form",
+      "title": "Industry/Community Partner Contact Form",
+      "href": "https://app.smartsheet.com/b/form/0d2b1570bfc44298a653850fbdda5d9f",
+      "section": "college-forms",
+      "sortOrder": 50
+    },
+    {
       "id": "accessuh",
       "title": "AccessUH",
       "href": "/my-uhco/applications/accessuh",

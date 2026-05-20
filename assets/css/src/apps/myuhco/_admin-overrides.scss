@@ -1,0 +1,248 @@
+// MyUHCO admin-only additions live here.
+
+.admin-nav-tile {
+	width: 220px;
+}
+
+.admin-nav-tile-icon-auth {
+	background: #e8f0fe;
+	color: #1a56db;
+}
+
+.admin-nav-tile-icon-modules {
+	background: #ecfdf5;
+	color: #059669;
+}
+
+.admin-nav-tile-icon-pages {
+	background: #fff4e5;
+	color: #c05621;
+}
+
+.admin-nav-tile-glyph {
+	font-size: 1.2rem;
+}
+
+.admin-nav-tile-copy {
+	font-size: 0.78rem;
+}
+
+.admin-action-danger,
+.admin-action-warn {
+	border: none;
+	border-radius: 4px;
+	padding: 5px 12px;
+	color: #fff;
+	cursor: pointer;
+	font-size: 0.82rem;
+}
+
+.admin-action-danger {
+	background: #dc3545;
+}
+
+.admin-action-danger:hover {
+	background: #c82333;
+}
+
+.admin-action-warn {
+	background: #fd7e14;
+}
+
+.admin-action-warn:hover {
+	background: #e36b07;
+}
+
+.auth-dashboard-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 16px;
+	padding: 16px;
+}
+
+.auth-dashboard-panel {
+	background: #fff;
+	border: 1px solid var(--uhco-border);
+	border-radius: 12px;
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+	overflow: hidden;
+}
+
+.auth-dashboard-panel-title {
+	background: #e8ecf1;
+	padding: 10px 16px;
+	font-weight: 600;
+	font-size: 0.9rem;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.auth-dashboard-panel-body {
+	padding: 0;
+	max-height: 420px;
+	overflow-y: auto;
+}
+
+.auth-dashboard-panel--wide {
+	grid-column: 1 / -1;
+}
+
+.auth-dashboard-meta {
+	font-weight: 400;
+	font-size: 0.8rem;
+	color: #555;
+}
+
+.auth-dashboard-label {
+	font-size: 0.85rem;
+}
+
+.auth-dashboard table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.82rem;
+}
+
+.auth-dashboard th {
+	background: #f0f2f5;
+	padding: 7px 10px;
+	text-align: left;
+	position: sticky;
+	top: 0;
+	font-weight: 600;
+}
+
+.auth-dashboard td {
+	padding: 6px 10px;
+	border-bottom: 1px solid #f0f2f5;
+	vertical-align: top;
+}
+
+.auth-dashboard tr:hover td {
+	background: #f9fafb;
+}
+
+.auth-dashboard .badge {
+	display: inline-block;
+	padding: 2px 7px;
+	border-radius: 10px;
+	font-size: 0.75rem;
+	font-weight: 600;
+}
+
+.auth-dashboard .b-login {
+	background: #d4edda;
+	color: #155724;
+}
+
+.auth-dashboard .b-logout {
+	background: #d6d8db;
+	color: #383d41;
+}
+
+.auth-dashboard .b-force_logout {
+	background: #f8d7da;
+	color: #721c24;
+}
+
+.auth-dashboard .b-login_failed {
+	background: #fff3cd;
+	color: #856404;
+}
+
+.auth-dashboard .b-rate_limited {
+	background: #f5c6cb;
+	color: #721c24;
+}
+
+.auth-dashboard .b-token_login {
+	background: #cce5ff;
+	color: #004085;
+}
+
+.auth-dashboard .b-access_denied {
+	background: #ffeeba;
+	color: #856404;
+}
+
+.auth-dashboard .b-session_refresh {
+	background: #e2e3e5;
+	color: #383d41;
+}
+
+.auth-dashboard-active-dot {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: #28a745;
+	display: inline-block;
+	margin-right: 5px;
+}
+
+.ws-status {
+	font-size: 0.75rem;
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: #6c757d;
+	color: #fff;
+}
+
+.ws-status.connected {
+	background: #28a745;
+}
+
+.ws-status.error {
+	background: #dc3545;
+}
+
+.auth-dashboard-time-cell {
+	white-space: nowrap;
+}
+
+.auth-dashboard-detail-cell,
+.auth-dashboard-feedback {
+	color: #555;
+}
+
+.auth-dashboard-detail-cell {
+	font-size: 0.78rem;
+}
+
+.auth-dashboard-force-form {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	padding: 12px 16px;
+	flex-wrap: wrap;
+}
+
+.auth-dashboard-force-form input {
+	border: 1px solid #ced4da;
+	border-radius: 4px;
+	padding: 5px 8px;
+	font-size: 0.85rem;
+	width: 120px;
+}
+
+.auth-dashboard-feedback {
+	font-size: 0.82rem;
+	margin-left: 8px;
+}
+
+.auth-dashboard-no-data {
+	padding: 16px;
+	color: #999;
+	font-size: 0.85rem;
+}
+
+@media (max-width: 991.98px) {
+	.auth-dashboard-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.auth-dashboard-panel--wide {
+		grid-column: auto;
+	}
+}

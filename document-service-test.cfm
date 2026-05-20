@@ -11,7 +11,7 @@
   }
 }>
 
-<cfif NOT structKeyExists(session, "portalUser")>
+<cfif NOT structKeyExists(session, "user")>
   <cfheader statuscode="401">
   <cfset response.message = "Unauthorized.">
   <cfoutput>#serializeJSON(response)#</cfoutput>

@@ -14,17 +14,17 @@
   </cffunction>
 
   <!---
-      Before Memorial Day: startYear = currentYear
-      On/After Memorial Day: startYear = currentYear + 1
+      Before May 1: startYear = currentYear
+      On/After May 1: startYear = currentYear + 1
       Returns a 4-year current-student window.
   --->
   <cffunction name="getGradYearWindow" access="public" returntype="struct" output="false">
     <cfset var currentYear = year(now())>
-    <cfset var memDay = getMemorialDayDate(currentYear)>
-    <cfset var startYear = (now() LT memDay) ? currentYear : (currentYear + 1)>
+    <cfset var cutoffDate = createDate(currentYear, 5, 1)>
+    <cfset var startYear = (now() LT cutoffDate) ? currentYear : (currentYear + 1)>
 
     <cfreturn {
-      memorialDay = memDay,
+      cutoffDate = cutoffDate,
       startYear = startYear,
       endYear = startYear + 3,
       graduatingYear = startYear

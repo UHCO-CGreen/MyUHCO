@@ -5,7 +5,7 @@
   <title>MyUHCO — Sign In</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <link rel="stylesheet" href="css/portal-style.css">
+  <link rel="stylesheet" href="/assets/css/dist/myuhco/portal.css">
   <link rel="shortcut icon" href="assets/images/46904E6A-93E9-1182-D5CC96AA4A79783F.png">
 </head>
 

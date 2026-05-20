@@ -1,0 +1,122 @@
+.pages-platform-shell {
+  --pages-border: #d7dee8;
+  --pages-muted: #5f6b7a;
+  --pages-surface: linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);
+}
+
+.pages-platform-card {
+  background: var(--pages-surface);
+  border: 1px solid var(--pages-border) !important;
+}
+
+.pages-editor-shell {
+  border: 1px solid var(--pages-border);
+  border-radius: 0.75rem;
+  background: #fff;
+  overflow: auto;
+  max-height: calc(100vh - 19rem);
+}
+
+.pages-editor-shell .ql-toolbar.ql-snow {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  border: 0;
+  border-bottom: 1px solid var(--pages-border);
+  background: #f8fafc;
+}
+
+.pages-editor-shell .ql-container.ql-snow {
+  border: 0;
+  min-height: 18rem;
+  font-size: 0.98rem;
+}
+
+.pages-editor-shell .ql-editor {
+  min-height: 18rem;
+}
+
+.pages-inline-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.pages-inline-meta {
+  color: var(--pages-muted);
+  font-size: 0.9rem;
+}
+
+.pages-inline-editor {
+  margin-top: 1.5rem;
+  border: 1px solid var(--pages-border);
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 1rem 2rem rgba(15, 23, 42, 0.08);
+}
+
+.pages-inline-editor[hidden] {
+  display: none !important;
+}
+
+.pages-inline-editor-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--pages-border);
+  background: #f8fafc;
+}
+
+.pages-inline-editor-body {
+  padding: 1.25rem;
+}
+
+.pages-inline-editor-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin: 1.25rem -1.25rem -1.25rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--pages-border);
+  background: rgba(248, 250, 252, 0.97);
+  backdrop-filter: blur(6px);
+}
+
+.pages-toggle-card {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--pages-border);
+  border-radius: 0.75rem;
+  background: #fff;
+}
+
+.page-content {
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.page-content > :last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 991.98px) {
+  .pages-inline-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pages-inline-editor {
+    box-shadow: 0 0.75rem 1.5rem rgba(15, 23, 42, 0.08);
+  }
+
+  .pages-editor-shell .ql-container.ql-snow,
+  .pages-editor-shell .ql-editor {
+    min-height: 14rem;
+  }
+
+  .pages-editor-shell {
+    max-height: none;
+  }
+}

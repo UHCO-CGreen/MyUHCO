@@ -41,14 +41,17 @@
 
         <cfset tokenResponse = _requestToken(appKey, appSecret, refreshToken)>
 
-        <cfif !structKeyExists(tokenResponse, "access_token") OR !len(trim(tokenResponse.access_token ?: ""))>
+        <cfif !structKeyExists(tokenResponse, "access_token") OR !len(trim(tokenResponse.access_token & ""))>
             <cfthrow
                 type="DropboxProvider.TokenError"
                 message="Dropbox token response did not include access_token."
             >
         </cfif>
 
-        <cfset expiresIn = val(tokenResponse.expires_in ?: 14400)>
+        <cfset expiresIn = 14400>
+        <cfif structKeyExists(tokenResponse, "expires_in")>
+            <cfset expiresIn = val(tokenResponse.expires_in)>
+        </cfif>
         <cfif expiresIn LTE 120>
             <cfset expiresIn = 120>
         </cfif>
@@ -99,7 +102,7 @@
         <cfset hasMore = structKeyExists(responseData, "has_more") AND responseData.has_more>
 
         <cfloop condition="hasMore">
-            <cfset cursorJson = '{"cursor":' & serializeJSON(responseData.cursor ?: "") & '}'>
+            <cfset cursorJson = '{"cursor":' & serializeJSON(structKeyExists(responseData, "cursor") ? responseData.cursor : "") & '}'>
 
             <cfset responseData = _postDropboxJson(
                 endpoint = "https://api.dropboxapi.com/2/files/list_folder/continue",
@@ -268,7 +271,7 @@
             payload  = payload
         )>
 
-        <cfif !structKeyExists(responseData, "link") OR !len(responseData.link ?: "")>
+        <cfif !structKeyExists(responseData, "link") OR !len(responseData.link & "")>
             <cfthrow type="DropboxProvider.ApiError" message="Dropbox did not return a temporary link for the requested path.">
         </cfif>
 
@@ -295,7 +298,7 @@
                 <cfreturn {
                     success = false,
                     message = cfcatch.message,
-                    detail = cfcatch.detail ?: ""
+                    detail = structKeyExists(cfcatch, "detail") ? cfcatch.detail : ""
                 }>
             </cfcatch>
         </cftry>
@@ -332,7 +335,7 @@
             >
         </cfif>
 
-        <cfif !isJSON(httpResp.fileContent ?: "")>
+        <cfif !isJSON(structKeyExists(httpResp, "fileContent") ? (httpResp.fileContent & "") : "")>
             <cfthrow
                 type="DropboxProvider.TokenError"
                 message="Dropbox token exchange returned non-JSON content."
@@ -391,7 +394,7 @@
             >
         </cfif>
 
-        <cfif !isJSON(httpResp.fileContent ?: "")>
+        <cfif !isJSON(structKeyExists(httpResp, "fileContent") ? (httpResp.fileContent & "") : "")>
             <cfthrow
                 type="DropboxProvider.ApiError"
                 message="Dropbox API returned non-JSON content."
@@ -445,8 +448,8 @@
         </cfif>
 
         <cfloop array="#arguments.responseData.entries#" index="entry">
-            <cfif (entry[".tag"] ?: "") EQ "file">
-                <cfset pathDisplay = entry.path_display ?: entry.path_lower ?: "">
+            <cfif (structKeyExists(entry, ".tag") ? entry[".tag"] : "") EQ "file">
+                <cfset pathDisplay = structKeyExists(entry, "path_display") ? entry.path_display : (structKeyExists(entry, "path_lower") ? entry.path_lower : "")>
                 <cfset ext = lCase(listLast(pathDisplay, "."))>
                 <cfif len(pathDisplay) AND (allowAll OR listFindNoCase(arguments.allowedExtensions, ext))>
                     <cfset arrayAppend(files, {
@@ -476,12 +479,12 @@
             <cfset messageText &= " (HTTP #arguments.httpResp.statusCode#)">
         </cfif>
 
-        <cfif isStruct(arguments.httpResp) AND structKeyExists(arguments.httpResp, "fileContent") AND isJSON(arguments.httpResp.fileContent ?: "")>
+        <cfif isStruct(arguments.httpResp) AND structKeyExists(arguments.httpResp, "fileContent") AND isJSON(arguments.httpResp.fileContent & "")>
             <cfset parsed = deserializeJSON(arguments.httpResp.fileContent)>
-            <cfif structKeyExists(parsed, "error_description") AND len(trim(parsed.error_description ?: ""))>
+            <cfif structKeyExists(parsed, "error_description") AND len(trim(parsed.error_description & ""))>
                 <cfreturn messageText & ": " & parsed.error_description>
             </cfif>
-            <cfif structKeyExists(parsed, "error_summary") AND len(trim(parsed.error_summary ?: ""))>
+            <cfif structKeyExists(parsed, "error_summary") AND len(trim(parsed.error_summary & ""))>
                 <cfif findNoCase("missing_scope", parsed.error_summary)>
                     <cfreturn messageText & ": " & parsed.error_summary & " (App key: " & appKeyHint & "). Verify app scopes include files.metadata.read and files.content.read, then generate a NEW refresh token and update AppConfig.">
                 </cfif>
@@ -492,7 +495,7 @@
             </cfif>
         </cfif>
 
-        <cfif isStruct(arguments.httpResp) AND structKeyExists(arguments.httpResp, "fileContent") AND len(trim(arguments.httpResp.fileContent ?: ""))>
+        <cfif isStruct(arguments.httpResp) AND structKeyExists(arguments.httpResp, "fileContent") AND len(trim(arguments.httpResp.fileContent & ""))>
             <cfreturn messageText & ": " & left(arguments.httpResp.fileContent, 400)>
         </cfif>
 

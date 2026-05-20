@@ -5,7 +5,7 @@
     Authenticates against CougarNet LDAP. No admin DB lookup is needed; any
     active member of the configured OPT groups is granted portal access.
 
-    Session key: session.portalUser  (distinct from admin's session.user)
+    Session key: session.user  (session.portalUser alias also set for backward compat)
   --->
 
   <cffunction
@@ -30,7 +30,7 @@
         attributes="displayName,memberOf,sAMAccountName,mail,telephoneNumber,accountExpires,userAccountControl,department,title,employeeID"
         start="DC=cougarnet,DC=uh,DC=edu"
         scope="SUBTREE"
-        filter="(&(objectClass=User)(objectCategory=Person)(sAMAccountName=#arguments.username#)(|(memberOf=CN=OPT-ASC,OU=ASC USERS,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-STAFF,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-OPTOMETRY,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-FACULTY-1,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2022,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2023,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2024,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2025,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2026,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2027,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2028,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)))"
+        filter="#buildPortalAccessFilter(arguments.username)#"
         maxrows="1"
         server="cougarnet.uh.edu"
         username="COUGARNET\#arguments.username#"
@@ -124,8 +124,8 @@
           url="#getMyuhcoQuickpullUrl()#"
           result="httpResponse"
           timeout="10">
-          <cfhttpparam type="url" name="token" value="#apiToken#">
-          <cfhttpparam type="url" name="secret" value="#apiSecret#">
+          <cfhttpparam type="header" name="Authorization" value="Bearer #apiToken#">
+          <cfhttpparam type="header" name="X-API-Secret" value="#apiSecret#">
           <cfhttpparam type="url" name="id" value="#ldapUsername#">
         </cfhttp>
 
@@ -288,7 +288,7 @@
         attributes="displayName,memberOf,sAMAccountName,mail,telephoneNumber,accountExpires,userAccountControl,department,title,employeeID"
         start="DC=cougarnet,DC=uh,DC=edu"
         scope="SUBTREE"
-        filter="(&(objectClass=User)(objectCategory=Person)(sAMAccountName=#arguments.username#)(|(memberOf=CN=OPT-ASC,OU=ASC USERS,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-STAFF,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-OPTOMETRY,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-FACULTY-1,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2022,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2023,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2024,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2025,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2026,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2027,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)(memberOf=CN=OPT-CLASS2028,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu)))"
+        filter="#buildPortalAccessFilter(arguments.username)#"
         maxrows="1"
         server="cougarnet.uh.edu"
         username="COUGARNET\#arguments.username#"
@@ -406,8 +406,8 @@
         url="#getMyuhcoQuickpullUrl()#"
         result="httpResponse"
         timeout="10">
-        <cfhttpparam type="url" name="token" value="#apiToken#">
-        <cfhttpparam type="url" name="secret" value="#apiSecret#">
+        <cfhttpparam type="header" name="Authorization" value="Bearer #apiToken#">
+        <cfhttpparam type="header" name="X-API-Secret" value="#apiSecret#">
         <cfhttpparam type="url" name="id" value="#profileUser.username#">
       </cfhttp>
 
@@ -514,18 +514,251 @@
   <cffunction name="createSession" access="public" returntype="void" output="false">
     <cfargument name="user" type="struct" required="true">
 
-    <cfset session.portalUser = duplicate(arguments.user)>
+    <cfset var sessionUser = duplicate(arguments.user)>
+    <cfset var userID = 0>
+    <cfset var sessionVersion = 1>
+    <cfset var sessionIP = left(trim(cgi.remote_addr & ""), 50)>
+    <cfset var sessionUA = left(trim(cgi.http_user_agent & ""), 500)>
+    <cfset var lastVisitedPath = left(trim(cgi.script_name & (len(trim(cgi.query_string & "")) ? "?" & trim(cgi.query_string & "") : "")), 500)>
+    <cfset var qSC = "">
+    <cfset var qInsertedSession = "">
+    <cfset var sessionRowID = 0>
+
+    <cfif NOT structKeyExists(sessionUser, "userId")>
+      <cfset sessionUser.userId = "">
+    </cfif>
+    <cfif NOT structKeyExists(sessionUser, "username")>
+      <cfset sessionUser.username = "">
+    </cfif>
+    <cfif NOT structKeyExists(sessionUser, "displayName")>
+      <cfset sessionUser.displayName = "">
+    </cfif>
+    <cfif NOT structKeyExists(sessionUser, "email")>
+      <cfset sessionUser.email = "">
+    </cfif>
+    <cfif NOT structKeyExists(sessionUser, "department")>
+      <cfset sessionUser.department = "">
+    </cfif>
+    <cfif NOT structKeyExists(sessionUser, "title")>
+      <cfset sessionUser.title = "">
+    </cfif>
+    <cfif NOT structKeyExists(sessionUser, "phone")>
+      <cfset sessionUser.phone = "">
+    </cfif>
+    <cfif NOT structKeyExists(sessionUser, "degrees")>
+      <cfset sessionUser.degrees = "">
+    </cfif>
+    <cfif NOT structKeyExists(sessionUser, "flags")>
+      <cfset sessionUser.flags = "">
+    </cfif>
+    <cfif NOT structKeyExists(sessionUser, "organizations")>
+      <cfset sessionUser.organizations = "">
+    </cfif>
+    <cfif NOT structKeyExists(sessionUser, "currentGradYear")>
+      <cfset sessionUser.currentGradYear = "">
+    </cfif>
+    <cfif NOT structKeyExists(sessionUser, "webProfileImage")>
+      <cfset sessionUser.webProfileImage = "">
+    </cfif>
+    <cfif NOT structKeyExists(sessionUser, "webThumbImage")>
+      <cfset sessionUser.webThumbImage = "">
+    </cfif>
+    <cfif NOT structKeyExists(sessionUser, "employeeID")>
+      <cfset sessionUser.employeeID = "">
+    </cfif>
+
+    <!--- Resolve integer userID from API-sourced userId field --->
+    <cfif isNumeric(sessionUser.userId)>
+      <cfset userID = int(val(sessionUser.userId))>
+    </cfif>
+
+    <!--- Sync with UserSessionControl when datasource is configured --->
+    <cfif userID GT 0
+      AND structKeyExists(application, "myuhcoDatasource")
+      AND len(trim(application.myuhcoDatasource))>
+
+      <cftry>
+        <!--- Ensure row exists (first login for this user) --->
+        <cfquery datasource="#application.myuhcoDatasource#">
+          IF NOT EXISTS (
+            SELECT 1 FROM UserSessionControl
+            WHERE UserID = <cfqueryparam value="#userID#" cfsqltype="cf_sql_integer">
+          )
+          BEGIN
+            INSERT INTO UserSessionControl (UserID)
+            VALUES (<cfqueryparam value="#userID#" cfsqltype="cf_sql_integer">)
+          END
+        </cfquery>
+
+        <!--- Read current SessionVersion --->
+        <cfquery name="qSC" datasource="#application.myuhcoDatasource#">
+          SELECT SessionVersion
+          FROM UserSessionControl
+          WHERE UserID = <cfqueryparam value="#userID#" cfsqltype="cf_sql_integer">
+        </cfquery>
+
+        <cfif qSC.recordCount GT 0>
+          <cfset sessionVersion = int(val(qSC.SessionVersion))>
+        </cfif>
+
+        <!--- Record login activity and clear any stale logout state --->
+        <cfquery datasource="#application.myuhcoDatasource#">
+          UPDATE UserSessionControl
+          SET LastActivity     = GETDATE(),
+              LastLogout       = NULL,
+              LastForcedLogout = NULL,
+              RequireReinit    = 0,
+              UpdatedAt        = GETDATE()
+          WHERE UserID = <cfqueryparam value="#userID#" cfsqltype="cf_sql_integer">
+        </cfquery>
+
+        <!--- Record the current portal login as an active session for admin visibility --->
+        <cfquery name="qInsertedSession" datasource="#application.myuhcoDatasource#">
+          INSERT INTO dbo.UserSessions (UserID, IPAddress, UserAgent, LastVisitedPath, IsActive)
+          OUTPUT INSERTED.SessionID
+          VALUES (
+            <cfqueryparam value="#userID#" cfsqltype="cf_sql_integer">,
+            <cfqueryparam value="#sessionIP#" cfsqltype="cf_sql_varchar">,
+            <cfqueryparam value="#sessionUA#" cfsqltype="cf_sql_varchar">,
+            <cfqueryparam value="#lastVisitedPath#" cfsqltype="cf_sql_varchar">,
+            1
+          )
+        </cfquery>
+
+        <cfif qInsertedSession.recordCount GT 0 AND isNumeric(qInsertedSession.SessionID[1])>
+          <cfset sessionRowID = int(val(qInsertedSession.SessionID[1]))>
+        </cfif>
+
+        <cfcatch type="any">
+          <cflog file="myuhco-session" type="error"
+            text="createSession DB error for userID #userID#: #cfcatch.message# | #cfcatch.detail#">
+          <!--- sessionVersion stays 1 — session proceeds --->
+        </cfcatch>
+      </cftry>
+
+    </cfif>
+
+    <!--- Canonical session.user struct (Module Phase A1) --->
+    <cfset session.user = {
+        userID          : int(val(sessionUser.userId)),
+        username        : lCase(trim(sessionUser.username & "")),
+        displayName     : trim(sessionUser.displayName & ""),
+        email           : trim(sessionUser.email & ""),
+        roles           : [],
+        loginTime       : now(),
+        sessionVersion  : sessionVersion,
+        profile : {
+            department  : trim(sessionUser.department & ""),
+            title       : trim(sessionUser.title & ""),
+            phone       : trim(sessionUser.phone & ""),
+            photoUrl    : trim(sessionUser.webProfileImage & "")
+        },
+        degrees         : trim(sessionUser.degrees & ""),
+        flags           : trim(sessionUser.flags & ""),
+        organizations   : trim(sessionUser.organizations & ""),
+        currentGradYear : trim(sessionUser.currentGradYear & ""),
+        webProfileImage : trim(sessionUser.webProfileImage & ""),
+        webThumbImage   : trim(sessionUser.webThumbImage & ""),
+        employeeID      : trim(sessionUser.employeeID & ""),
+        department      : trim(sessionUser.department & ""),
+        title           : trim(sessionUser.title & ""),
+        phone           : trim(sessionUser.phone & ""),
+        authType        : "ldap"
+    }>
+    <!--- Backward-compat alias — retire after all templates confirmed updated --->
+    <cfset session.portalUser = session.user>
+    <cfif sessionRowID GT 0>
+      <cfset session.userSessionRowID = sessionRowID>
+    <cfelseif structKeyExists(session, "userSessionRowID")>
+      <cfset structDelete(session, "userSessionRowID")>
+    </cfif>
   </cffunction>
 
   <cffunction name="isLoggedIn" access="public" returntype="boolean" output="false">
-    <cfreturn structKeyExists(session, "portalUser")>
+    <cfreturn structKeyExists(session, "user") AND isStruct(session.user) AND structKeyExists(session.user, "userID")>
   </cffunction>
 
   <cffunction name="logout" access="public" returntype="void" output="false">
+    <cfset var userID = 0>
+
+    <cfif structKeyExists(session, "user")>
+      <cfif structKeyExists(session.user, "userID") AND isNumeric(session.user.userID)>
+        <cfset userID = int(val(session.user.userID))>
+      </cfif>
+      <cfset structDelete(session, "user")>
+    </cfif>
     <cfif structKeyExists(session, "portalUser")>
       <cfset structDelete(session, "portalUser")>
     </cfif>
+
+    <!--- Record logout timestamp and bump SessionVersion to invalidate outstanding tokens --->
+    <cfif userID GT 0
+      AND structKeyExists(application, "myuhcoDatasource")
+      AND len(trim(application.myuhcoDatasource))>
+      <cftry>
+        <cfquery datasource="#application.myuhcoDatasource#">
+          UPDATE UserSessionControl
+          SET LastLogout     = GETDATE(),
+              SessionVersion = SessionVersion + 1,
+              UpdatedAt      = GETDATE()
+          WHERE UserID = <cfqueryparam value="#userID#" cfsqltype="cf_sql_integer">
+        </cfquery>
+
+        <!--- STEP 6: Close all active session rows --->
+        <cfquery datasource="#application.myuhcoDatasource#">
+          UPDATE dbo.UserSessions
+          SET IsActive   = 0,
+              LogoutTime = GETDATE(),
+              UpdatedAt  = GETDATE()
+          WHERE UserID  = <cfqueryparam value="#userID#" cfsqltype="cf_sql_integer">
+            AND IsActive = 1
+        </cfquery>
+
+        <cfcatch type="any">
+          <cflog file="myuhco-session" type="error"
+            text="logout DB error for userID #userID#: #cfcatch.message# | #cfcatch.detail#">
+        </cfcatch>
+      </cftry>
+    </cfif>
+
+    <!--- STEP 7: Audit log LOGOUT event --->
+    <cfif userID GT 0 AND isObject(application.securityService)>
+      <cfset application.securityService.auditLog(
+        eventType = "LOGOUT",
+        userID    = userID,
+        ipAddress = left(trim(cgi.remote_addr & ""), 50),
+        userAgent = left(trim(cgi.http_user_agent & ""), 500)
+      )>
+    </cfif>
+
     <cfset sessionInvalidate()>
+  </cffunction>
+
+  <cffunction name="buildPortalAccessFilter" access="private" returntype="string" output="false">
+    <cfargument name="username" type="string" required="true">
+
+    <cfset var groupDns = [
+      "CN=OPT-ASC,OU=ASC USERS,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu",
+      "CN=OPT-STAFF,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu",
+      "CN=OPT-OPTOMETRY,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu",
+      "CN=OPT-FACULTY-1,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu",
+      "CN=OPT-CLASS2022,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu",
+      "CN=OPT-CLASS2023,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu",
+      "CN=OPT-CLASS2024,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu",
+      "CN=OPT-CLASS2025,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu",
+      "CN=OPT-CLASS2026,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu",
+      "CN=OPT-CLASS2027,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu",
+      "CN=OPT-CLASS2028,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu",
+      "CN=OPT-FacultyStaffStudents,OU=Distribution Groups,OU=OPTOMETRY,DC=cougarnet,DC=uh,DC=edu"
+    ]>
+    <cfset var memberOfClauses = "">
+    <cfset var groupDn = "">
+
+    <cfloop array="#groupDns#" index="groupDn">
+      <cfset memberOfClauses &= "(memberOf=#groupDn#)">
+    </cfloop>
+
+    <cfreturn "(&(objectClass=User)(objectCategory=Person)(sAMAccountName=#arguments.username#)(|#memberOfClauses#))">
   </cffunction>
 
   <cffunction name="getMyuhcoQuickpullUrl" access="private" returntype="string" output="false">

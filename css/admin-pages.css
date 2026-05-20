@@ -1,0 +1,108 @@
+.pages-admin-shell {
+  --pages-border: #d7dee8;
+  --pages-muted: #5f6b7a;
+  --pages-panel-bg: linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);
+}
+
+.pages-admin-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.pages-admin-alert {
+  border-width: 1px;
+}
+
+.pages-admin-card {
+  background: var(--pages-panel-bg);
+  border: 1px solid var(--pages-border) !important;
+}
+
+.pages-admin-form .form-label {
+  font-weight: 600;
+}
+
+.pages-admin-editor {
+  min-height: 22rem;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.95rem;
+}
+
+.pages-admin-toggles {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--pages-border);
+  border-radius: 0.75rem;
+  background: #fff;
+}
+
+.pages-admin-collapsible {
+  border: 1px solid var(--pages-border);
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.9rem 1rem;
+}
+
+.pages-admin-collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.pages-admin-collapse-toggle::after {
+  content: "\25be";
+  font-size: 0.72rem;
+  transition: transform 0.2s ease;
+}
+
+.pages-admin-collapse-toggle[aria-expanded="true"]::after {
+  transform: rotate(180deg);
+}
+
+.pages-admin-meta-collapse {
+  margin-top: 0.35rem;
+}
+
+.pages-admin-row-form {
+  min-width: 11rem;
+}
+
+.pages-admin-row-form .form-check-label {
+  font-size: 0.92rem;
+}
+
+.pages-admin-table thead th {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pages-muted);
+  border-bottom: 1px solid var(--pages-border);
+}
+
+.pages-admin-table tbody tr {
+  border-top: 1px solid var(--pages-border);
+}
+
+.pages-admin-table tbody td {
+  background: transparent;
+  padding-top: 0.9rem;
+  padding-bottom: 0.9rem;
+}
+
+.pages-admin-empty {
+  padding: 1rem;
+  border: 1px dashed var(--pages-border);
+  border-radius: 0.75rem;
+  color: var(--pages-muted);
+  background: #fff;
+}
+
+.pages-admin-path {
+  font-family: Consolas, "Courier New", monospace;
+}
+
+@media (max-width: 991.98px) {
+  .pages-admin-editor {
+    min-height: 18rem;
+  }
+}

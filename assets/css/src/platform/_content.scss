@@ -1,0 +1,29 @@
+.mainContainer {
+  min-height: 100vh;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.portal-main {
+  position: relative;
+  min-width: 0;
+}
+
+.portal-card {
+  border: 1px solid var(--uhco-border);
+  background: linear-gradient(170deg, #ffffff 0%, #f9fbfd 100%);
+
+  h1 {
+    color: var(--uhco-ink);
+  }
+
+  .lead {
+    max-width: 75ch;
+    color: var(--uhco-muted) !important;
+  }
+}
+
+.portal-login-card {
+  width: 100%;
+  max-width: 420px;
+}

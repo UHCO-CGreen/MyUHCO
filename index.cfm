@@ -1,18 +1,205 @@
 <cfsetting showdebugoutput="false">
 <cfscript>
-if (!structKeyExists(session, "portalUser")) {
-  location("/login.cfm", false);
-}
-
-portalUser = session.portalUser;
+hasPortalSession = structKeyExists(session, "user");
+portalUser = hasPortalSession ? session.user : {};
 currentUserId = "";
-if (structKeyExists(portalUser, "userId") AND len(trim(portalUser.userId & ""))) {
+if (hasPortalSession AND structKeyExists(portalUser, "userId") AND len(trim(portalUser.userId & ""))) {
   currentUserId = trim(portalUser.userId & "");
-} else if (structKeyExists(portalUser, "username") AND len(trim(portalUser.username & ""))) {
+} else if (hasPortalSession AND structKeyExists(portalUser, "username") AND len(trim(portalUser.username & ""))) {
   currentUserId = trim(portalUser.username & "");
 }
 if (!len(currentUserId)) {
   currentUserId = "anonymous";
+}
+
+dashboardPanels = [];
+dashboardMainPanels = [];
+dashboardSidebarPanels = [];
+dashboardStylesheets = [];
+dashboardScripts = [];
+standaloneModuleRequest = false;
+publicModuleTokenRequired = false;
+publicModuleTokenValid = true;
+publicModuleTokenFailureMessage = "";
+pageInlineFlashMessage = "";
+pageInlineFlashType = "success";
+pageInlineEditing = false;
+pageInlineAdminAllowed = hasPortalSession
+  AND structKeyExists(application, "accessService")
+  AND isObject(application.accessService)
+  AND application.accessService.hasPermission("portal.admin");
+
+// ── Module dispatch resolution ──────────────────────────────────────────────────────
+dispatchMode = "dashboard";
+activeModule = {};
+activePage = {};
+if (structKeyExists(url, "module") AND len(trim(url.module & ""))) {
+  _reqModID = lCase(trim(url.module));
+  _foundMod = {};
+  if (structKeyExists(application, "moduleRegistry") AND isArray(application.moduleRegistry)) {
+    for (_reg in application.moduleRegistry) {
+      if (structKeyExists(_reg, "id") AND lCase(trim(_reg.id)) EQ _reqModID) {
+        _foundMod = _reg;
+        break;
+      }
+    }
+  }
+  if (!structCount(_foundMod)) {
+    dispatchMode = "error-404";
+  } else if (!_foundMod.enabled) {
+    dispatchMode = "error-503";
+  } else if (_foundMod.requiresAuth AND !hasPortalSession) {
+    location("/login.cfm", false);
+  } else {
+    _hasAccess = true;
+    if (
+      _foundMod.requiresAuth
+      AND structKeyExists(application, "accessService")
+      AND isObject(application.accessService)
+      AND isArray(_foundMod.permissions)
+      AND arrayLen(_foundMod.permissions)
+    ) {
+      _hasAccess = false;
+      for (_perm in _foundMod.permissions) {
+        if (application.accessService.hasPermission(_perm)) {
+          _hasAccess = true;
+          break;
+        }
+      }
+    }
+    if (!_hasAccess) {
+      dispatchMode = "error-403";
+    } else if (int(val(_foundMod.type)) EQ 4) {
+      location("/auth/redirect.cfm?to=" & urlEncodedFormat(_foundMod.entryPoint), false);
+    } else {
+      dispatchMode = "module-include";
+      activeModule = _foundMod;
+      standaloneModuleRequest = structKeyExists(_foundMod, "renderMode")
+        AND lCase(trim(_foundMod.renderMode & "")) EQ "standalone";
+
+      if (
+        !_foundMod.requiresAuth
+        AND structKeyExists(_foundMod, "publicAccess")
+        AND isStruct(_foundMod.publicAccess)
+        AND structKeyExists(_foundMod.publicAccess, "mode")
+        AND lCase(trim(_foundMod.publicAccess.mode & "")) EQ "token"
+        AND structKeyExists(_foundMod.publicAccess, "required")
+        AND _foundMod.publicAccess.required EQ true
+      ) {
+        publicModuleTokenRequired = true;
+        publicModuleTokenValid = false;
+
+        if (!structKeyExists(url, "token") OR !len(trim(url.token & ""))) {
+          publicModuleTokenFailureMessage = "Display unavailable.";
+        } else if (!structKeyExists(application, "tokenService") OR !isObject(application.tokenService)) {
+          publicModuleTokenFailureMessage = "Display unavailable.";
+        } else {
+          _publicModuleTokenCheck = application.tokenService.verifyModuleAccessToken(trim(url.token & ""), _foundMod.id);
+          publicModuleTokenValid = _publicModuleTokenCheck.valid;
+          if (!publicModuleTokenValid) {
+            publicModuleTokenFailureMessage = "Display unavailable.";
+          }
+        }
+      }
+    }
+  }
+
+} else if (structKeyExists(url, "page") AND len(trim(url.page & ""))) {
+  _requestedPageSlug = lCase(trim(url.page & ""));
+  if (!hasPortalSession) {
+    location("/login.cfm", false);
+  } else if (!structKeyExists(application, "pageService") OR !isObject(application.pageService)) {
+    dispatchMode = "error-503";
+  } else {
+    _pageLookup = application.pageService.getPublishedPageBySlug(_requestedPageSlug);
+    if (!_pageLookup.success) {
+      dispatchMode = "error-503";
+    } else if (_pageLookup.isDraft) {
+      dispatchMode = "error-503";
+    } else if (!_pageLookup.found) {
+      dispatchMode = "error-404";
+    } else {
+      dispatchMode = "page-render";
+      activePage = _pageLookup.page;
+    }
+  }
+}
+
+if (
+  dispatchMode EQ "page-render"
+  AND cgi.request_method EQ "POST"
+  AND structKeyExists(form, "_pageInlineAction")
+  AND form._pageInlineAction EQ "saveInlinePage"
+  AND pageInlineAdminAllowed
+) {
+  _inlineSaveResult = application.pageService.savePage({
+    pageId = structKeyExists(form, "pageId") ? form.pageId : 0,
+    slug = structKeyExists(form, "slug") ? form.slug : "",
+    title = structKeyExists(form, "title") ? form.title : "",
+    navLabel = structKeyExists(form, "navLabel") ? form.navLabel : "",
+    summary = structKeyExists(form, "summary") ? form.summary : "",
+    bodyHtml = structKeyExists(form, "bodyHtml") ? form.bodyHtml : "",
+    isPublished = structKeyExists(form, "isPublished") ? 1 : 0,
+    showInNav = structKeyExists(form, "showInNav") ? 1 : 0,
+    navSortOrder = structKeyExists(form, "navSortOrder") ? form.navSortOrder : 100
+  }, session.user.userID);
+
+  if (_inlineSaveResult.success) {
+    _pageLookup = application.pageService.getPublishedPageBySlug(_requestedPageSlug);
+    if (_pageLookup.success AND _pageLookup.found) {
+      activePage = _pageLookup.page;
+      pageInlineFlashMessage = "Page saved.";
+      pageInlineFlashType = "success";
+      pageInlineEditing = false;
+    } else {
+      location("/index.cfm?page=" & urlEncodedFormat(_requestedPageSlug), false);
+    }
+  } else {
+    pageInlineFlashMessage = _inlineSaveResult.message;
+    pageInlineFlashType = "danger";
+    pageInlineEditing = true;
+    activePage = {
+      pageId = int(val(structKeyExists(form, "pageId") ? form.pageId : 0)),
+      slug = trim(structKeyExists(form, "slug") ? form.slug : ""),
+      title = trim(structKeyExists(form, "title") ? form.title : ""),
+      navLabel = trim(structKeyExists(form, "navLabel") ? form.navLabel : ""),
+      summary = trim(structKeyExists(form, "summary") ? form.summary : ""),
+      bodyHtml = structKeyExists(form, "bodyHtml") ? form.bodyHtml & "" : "",
+      isPublished = structKeyExists(form, "isPublished"),
+      showInNav = structKeyExists(form, "showInNav"),
+      navSortOrder = int(val(structKeyExists(form, "navSortOrder") ? form.navSortOrder : 100))
+    };
+  }
+}
+
+</cfscript>
+<cfif standaloneModuleRequest AND publicModuleTokenRequired AND NOT publicModuleTokenValid>
+  <cfheader statuscode="403">
+  <!doctype html>
+  <html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Display Unavailable</title>
+    <style>
+      body { margin: 0; font-family: Arial, sans-serif; background: #111827; color: #f3f4f6; display: flex; min-height: 100vh; align-items: center; justify-content: center; }
+      .display-denied { padding: 24px 28px; border: 1px solid #374151; border-radius: 12px; background: #1f2937; font-size: 1.1rem; }
+    </style>
+  </head>
+  <body>
+    <div class="display-denied"><cfoutput>#encodeForHTML(publicModuleTokenFailureMessage)#</cfoutput></div>
+  </body>
+  </html>
+  <cfabort>
+</cfif>
+<cfif standaloneModuleRequest>
+  <cfinclude template="/#activeModule.entryPoint#">
+  <cfabort>
+</cfif>
+<cfscript>
+
+if (!hasPortalSession) {
+  location("/login.cfm", false);
 }
 
 linksFlashMessage = "";
@@ -24,61 +211,13 @@ if (structKeyExists(url, "linksStatus")) {
   linksFlashStatus = lCase(trim(url.linksStatus & ""));
 }
 
-if (cgi.request_method EQ "POST" AND structKeyExists(form, "linkAction")) {
-  action = lCase(trim(form.linkAction & ""));
-  flashMessage = "";
-  flashStatus = "error";
-  returnOtherLinksPage = 1;
-
-  if (structKeyExists(form, "olPage")) {
-    returnOtherLinksPage = val(form.olPage);
-  }
-  if (returnOtherLinksPage LT 1) {
-    returnOtherLinksPage = 1;
-  }
-
-  if (action EQ "create") {
-    titleValue = trim((structKeyExists(form, "linkTitle") ? form.linkTitle : "") & "");
-    hrefValue = trim((structKeyExists(form, "linkHref") ? form.linkHref : "") & "");
-    saveResult = application.linkService.saveUserLink(
-      userId = currentUserId,
-      title = titleValue,
-      href = hrefValue
-    );
-    if (saveResult.success) {
-      flashStatus = "success";
-      flashMessage = "Link saved.";
-    } else {
-      flashMessage = len(saveResult.message) ? saveResult.message : "Unable to save link.";
-    }
-  } else if (action EQ "delete") {
-    linkIdValue = trim((structKeyExists(form, "linkId") ? form.linkId : "") & "");
-    deleteResult = application.linkService.deleteUserLink(
-      userId = currentUserId,
-      linkId = linkIdValue
-    );
-    if (deleteResult.success) {
-      flashStatus = "success";
-      flashMessage = "Link deleted.";
-    } else {
-      flashMessage = len(deleteResult.message) ? deleteResult.message : "Unable to delete link.";
-    }
-  } else {
-    flashMessage = "Unknown link action.";
-  }
-
-  location(
-    "index.cfm?linksStatus=" & urlEncodedFormat(flashStatus) & "&linksMessage=" & urlEncodedFormat(flashMessage) & "&olPage=" & urlEncodedFormat(returnOtherLinksPage),
-    false
-  );
-}
-
 roleLabel = "";
 roleDisplay = "";
 flagsRaw = "";
 gradYearDisplay = "";
 organizationsRaw = "";
 canViewSettings = false;
+canViewAdminDashboard = false;
 
 if (structKeyExists(portalUser, "flags")) {
   if (isSimpleValue(portalUser.flags)) {
@@ -100,6 +239,10 @@ if (structKeyExists(portalUser, "organizations")) {
 if (findNoCase("web services", organizationsRaw) OR findNoCase("web-services", organizationsRaw)) {
   canViewSettings = true;
 }
+
+canViewAdminDashboard = (structKeyExists(application, "accessService") AND isObject(application.accessService))
+                      ? application.accessService.hasPermission("portal.admin")
+                      : false;
 
 canSeeAllUserTypeDocs = canViewSettings;
 userTypeKey = "";
@@ -142,6 +285,72 @@ if (
   gradYearDisplay = " (" & trim(portalUser.currentGradYear & "") & ")";
 }
 
+// ── Registry nav items ────────────────────────────────────────────────────────
+_navItems = [];
+_navActiveModule = structKeyExists(url, "module") ? lCase(trim(url.module & "")) : "";
+_navActivePage = structKeyExists(url, "page") ? lCase(trim(url.page & "")) : "";
+if (structKeyExists(application, "moduleRegistry") AND isArray(application.moduleRegistry)) {
+  for (_navMod in application.moduleRegistry) {
+    if (!_navMod.enabled) continue;
+    if (!structKeyExists(_navMod, "nav")) continue;
+    _navShowInSidebar = !structKeyExists(_navMod.nav, "showInSidebar") OR _navMod.nav.showInSidebar EQ true;
+    if (!_navShowInSidebar) continue;
+    if (_navMod.requiresAuth) {
+      _navGranted = true;
+      if (isArray(_navMod.permissions) AND arrayLen(_navMod.permissions)) {
+        _navGranted = false;
+        if (
+          structKeyExists(application, "accessService")
+          AND isObject(application.accessService)
+        ) {
+          for (_navPerm in _navMod.permissions) {
+            if (application.accessService.hasPermission(_navPerm)) {
+              _navGranted = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!_navGranted) continue;
+    }
+    arrayAppend(_navItems, {
+      type:      "module",
+      id:        _navMod.id,
+      label:     _navMod.nav.label,
+      icon:      _navMod.nav.icon,
+      group:     structKeyExists(_navMod.nav, "group")     ? trim(_navMod.nav.group & "")        : "",
+      sortOrder: structKeyExists(_navMod.nav, "sortOrder") ? int(val(_navMod.nav.sortOrder)) : 99,
+      href:      "index.cfm?module=" & _navMod.id,
+      target:    int(val(_navMod.type)) EQ 4 ? "_blank" : "",
+      rel:       int(val(_navMod.type)) EQ 4 ? "noopener noreferrer" : ""
+    });
+  }
+}
+if (structKeyExists(application, "pageService") AND isObject(application.pageService)) {
+  _pageNavResult = application.pageService.listNavPages();
+  if (_pageNavResult.success AND isArray(_pageNavResult.pages)) {
+    for (_navPage in _pageNavResult.pages) {
+      arrayAppend(_navItems, {
+        type:      "page",
+        id:        _navPage.slug,
+        label:     len(trim(_navPage.navLabel & "")) ? trim(_navPage.navLabel & "") : trim(_navPage.title & ""),
+        icon:      "fas fa-file-alt",
+        group:     "Pages",
+        sortOrder: int(val(_navPage.navSortOrder)),
+        href:      "/index.cfm?page=" & urlEncodedFormat(_navPage.slug)
+      });
+    }
+  }
+}
+arraySort(_navItems, function(a, b) {
+  if (a.group LT b.group) return -1;
+  if (a.group GT b.group) return 1;
+  return a.sortOrder - b.sortOrder;
+});
+
+</cfscript>
+<cfif dispatchMode EQ "dashboard">
+<cfscript>
 directoryResult = {
   success = true,
   message = "Click a group below to load directory members.",
@@ -153,30 +362,11 @@ directoryResult = {
   }
 };
 
-documentResult = {
-  success = false,
-  message = "Documents have not loaded.",
-  items = [],
-  quickDocsFolderUrl = ""
-};
-
 linksResult = {
   success = false,
   message = "Links have not loaded.",
   links = []
 };
-
-try {
-  documentResult = application.documentService.getDocuments();
-} catch (any e) {
-  documentResult = {
-    success = false,
-    message = "Document service unavailable.",
-    items = [],
-    quickDocsFolderUrl = ""
-  };
-  cflog(file = "myuhco-api", type = "error", text = "Index document section failed: #e.message#");
-}
 
 try {
   linksResult = application.linkService.getMergedLinks(userId = currentUserId);
@@ -193,7 +383,6 @@ directoryCount = arrayLen(directoryResult.groups.faculty)
   + arrayLen(directoryResult.groups.staff)
   + arrayLen(directoryResult.groups.students)
   + arrayLen(directoryResult.groups.alumni);
-documentsCount = arrayLen(documentResult.items);
 linksCount = arrayLen(linksResult.links);
 
 gradYearWindow = application.dateHelper.getGradYearWindow();
@@ -214,36 +403,15 @@ for (y = alumniEndYear; y GTE alumniStartYear; y = y - 1) {
   arrayAppend(alumniGradYears, y);
 }
 
-quickDocs = [];
-facultyDocs = [];
-staffDocs = [];
-studentDocs = [];
+dashboardPanels = [];
+dashboardMainPanels = [];
+dashboardSidebarPanels = [];
+dashboardStylesheets = [];
+dashboardScripts = [];
+uhcoNewsItems = [];
 
 collegeFormsLinks = [];
 otherLinks = [];
-
-if (documentResult.success) {
-  for (docItem in documentResult.items) {
-    docSection = lCase(trim((structKeyExists(docItem, "section") ? docItem.section : "") & ""));
-    if (docSection EQ "quick-docs" OR docSection EQ "quick docs") {
-      arrayAppend(quickDocs, docItem);
-    } else if (docSection EQ "faculty") {
-      if (canSeeAllUserTypeDocs OR userTypeKey EQ "faculty") {
-        arrayAppend(facultyDocs, docItem);
-      }
-    } else if (docSection EQ "staff") {
-      if (canSeeAllUserTypeDocs OR userTypeKey EQ "staff") {
-        arrayAppend(staffDocs, docItem);
-      }
-    } else if (docSection EQ "students" OR docSection EQ "student") {
-      if (canSeeAllUserTypeDocs OR userTypeKey EQ "students") {
-        arrayAppend(studentDocs, docItem);
-      }
-    } else {
-      arrayAppend(quickDocs, docItem);
-    }
-  }
-}
 
 if (linksResult.success) {
   for (linkItem in linksResult.links) {
@@ -255,6 +423,400 @@ if (linksResult.success) {
     }
   }
 }
+
+if (structKeyExists(application, "moduleRegistry") AND isArray(application.moduleRegistry)) {
+  for (_dashMod in application.moduleRegistry) {
+    if (!_dashMod.enabled) {
+      continue;
+    }
+    if (!structKeyExists(_dashMod, "dashboard") OR !isStruct(_dashMod.dashboard) OR !_dashMod.dashboard.enabled) {
+      continue;
+    }
+
+    _dashGranted = true;
+    if (_dashMod.requiresAuth AND isArray(_dashMod.permissions) AND arrayLen(_dashMod.permissions)) {
+      _dashGranted = false;
+      if (structKeyExists(application, "accessService") AND isObject(application.accessService)) {
+        for (_dashPerm in _dashMod.permissions) {
+          if (application.accessService.hasPermission(_dashPerm)) {
+            _dashGranted = true;
+            break;
+          }
+        }
+      }
+    }
+    if (!_dashGranted) {
+      continue;
+    }
+
+    _dashProviderType = structKeyExists(_dashMod.dashboard, "providerType") ? lCase(trim(_dashMod.dashboard.providerType & "")) : "";
+    _dashProvider = structKeyExists(_dashMod.dashboard, "provider") ? trim(_dashMod.dashboard.provider & "") : "";
+    _dashMethod = structKeyExists(_dashMod.dashboard, "method") ? trim(_dashMod.dashboard.method & "") : "getPanels";
+    _dashPanelDefs = (structKeyExists(_dashMod.dashboard, "panels") AND isArray(_dashMod.dashboard.panels)) ? duplicate(_dashMod.dashboard.panels) : [];
+
+    if (_dashProviderType NEQ "component" OR !len(_dashProvider)) {
+      continue;
+    }
+
+    try {
+      _dashProviderInstance = createObject("component", _dashProvider);
+      dashboardProviderResult = invoke(_dashProviderInstance, _dashMethod, {
+        context = {
+          module = _dashMod,
+          panelDefinitions = _dashPanelDefs,
+          userTypeKey = userTypeKey,
+          includeAllSpecificDocs = canSeeAllUserTypeDocs,
+          currentUserId = currentUserId
+        }
+      });
+
+      if (!isStruct(dashboardProviderResult) OR !structKeyExists(dashboardProviderResult, "success") OR !dashboardProviderResult.success) {
+        if (isStruct(dashboardProviderResult) AND structKeyExists(dashboardProviderResult, "message") AND len(trim(dashboardProviderResult.message & ""))) {
+          cflog(file = "myuhco-api", type = "warning", text = "Dashboard provider '#_dashMod.id#' returned no panels: #dashboardProviderResult.message#");
+        }
+        continue;
+      }
+      if (!structKeyExists(dashboardProviderResult, "panels") OR !isArray(dashboardProviderResult.panels)) {
+        continue;
+      }
+
+      if (structKeyExists(dashboardProviderResult, "assets") AND isStruct(dashboardProviderResult.assets)) {
+        if (structKeyExists(dashboardProviderResult.assets, "stylesheets") AND isArray(dashboardProviderResult.assets.stylesheets)) {
+          for (_dashboardStylesheetHref in dashboardProviderResult.assets.stylesheets) {
+            _dashboardStylesheetHref = trim(_dashboardStylesheetHref & "");
+            if (len(_dashboardStylesheetHref) AND !arrayFindNoCase(dashboardStylesheets, _dashboardStylesheetHref)) {
+              arrayAppend(dashboardStylesheets, _dashboardStylesheetHref);
+            }
+          }
+        }
+        if (structKeyExists(dashboardProviderResult.assets, "scripts") AND isArray(dashboardProviderResult.assets.scripts)) {
+          for (_dashboardScriptSrc in dashboardProviderResult.assets.scripts) {
+            _dashboardScriptSrc = trim(_dashboardScriptSrc & "");
+            if (len(_dashboardScriptSrc) AND !arrayFindNoCase(dashboardScripts, _dashboardScriptSrc)) {
+              arrayAppend(dashboardScripts, _dashboardScriptSrc);
+            }
+          }
+        }
+      }
+
+      for (_dashPanel in dashboardProviderResult.panels) {
+        if (!isStruct(_dashPanel)) {
+          continue;
+        }
+
+        _dashPanelId = structKeyExists(_dashPanel, "panelId") ? lCase(trim(_dashPanel.panelId & "")) : "";
+        if (!len(_dashPanelId)) {
+          continue;
+        }
+
+        _dashPanelDef = {};
+        for (_panelDef in _dashPanelDefs) {
+          if (isStruct(_panelDef) AND structKeyExists(_panelDef, "id") AND lCase(trim(_panelDef.id & "")) EQ _dashPanelId) {
+            _dashPanelDef = _panelDef;
+            break;
+          }
+        }
+        if (structCount(_dashPanelDef) AND structKeyExists(_dashPanelDef, "enabled") AND !_dashPanelDef.enabled) {
+          continue;
+        }
+
+        if (!structKeyExists(_dashPanel, "moduleId")) {
+          _dashPanel.moduleId = _dashMod.id;
+        }
+        if (!structKeyExists(_dashPanel, "title") OR !len(trim(_dashPanel.title & ""))) {
+          _dashPanel.title = structCount(_dashPanelDef) AND structKeyExists(_dashPanelDef, "title") ? trim(_dashPanelDef.title & "") : trim(_dashMod.name & "");
+        }
+        if (!structKeyExists(_dashPanel, "type") OR !len(trim(_dashPanel.type & ""))) {
+          _dashPanel.type = structCount(_dashPanelDef) AND structKeyExists(_dashPanelDef, "type") ? trim(_dashPanelDef.type & "") : "link-list";
+        }
+        if (!structKeyExists(_dashPanel, "viewAllHref") OR !len(trim(_dashPanel.viewAllHref & ""))) {
+          _dashPanel.viewAllHref = structCount(_dashPanelDef) AND structKeyExists(_dashPanelDef, "viewAllHref") ? trim(_dashPanelDef.viewAllHref & "") : ("index.cfm?module=" & _dashMod.id);
+        }
+        if (!structKeyExists(_dashPanel, "emptyMessage") OR !len(trim(_dashPanel.emptyMessage & ""))) {
+          _dashPanel.emptyMessage = "No items are available.";
+        }
+        if (!structKeyExists(_dashPanel, "items") OR !isArray(_dashPanel.items)) {
+          _dashPanel.items = [];
+        }
+        _dashPanel.column = structCount(_dashPanelDef) AND structKeyExists(_dashPanelDef, "column") ? lCase(trim(_dashPanelDef.column & "")) : (structKeyExists(_dashPanel, "column") ? lCase(trim(_dashPanel.column & "")) : "main");
+        if (_dashPanel.column NEQ "sidebar") {
+          _dashPanel.column = "main";
+        }
+        _dashPanel.sortOrder = structCount(_dashPanelDef) AND structKeyExists(_dashPanelDef, "sortOrder") ? int(val(_dashPanelDef.sortOrder)) : (structKeyExists(_dashPanel, "sortOrder") ? int(val(_dashPanel.sortOrder)) : 99);
+        _dashPanel.itemCount = structKeyExists(_dashPanel, "itemCount") ? int(val(_dashPanel.itemCount)) : arrayLen(_dashPanel.items);
+        arrayAppend(dashboardPanels, _dashPanel);
+      }
+    } catch (any e) {
+      cflog(file = "myuhco-api", type = "error", text = "Dashboard provider '#_dashMod.id#' failed: #e.message# | #e.detail#");
+    }
+  }
+}
+
+function appendUhcoNewsItem(required array targetItems, any title = "", any href = "", any publishedAt = "") {
+  var safeTitle = trim(arguments.title & "");
+  var safeHref = trim(arguments.href & "");
+  var safePublishedAt = trim(arguments.publishedAt & "");
+
+  if (!len(safeTitle) OR !len(safeHref)) {
+    return;
+  }
+
+  arrayAppend(arguments.targetItems, {
+    title = safeTitle,
+    href = safeHref,
+    publishedAt = safePublishedAt
+  });
+}
+
+function getXmlChildValue(required any itemNode, required string childName) {
+  var xmlChild = "";
+  var xmlChildren = [];
+  var normalizedName = lCase(trim(arguments.childName & ""));
+  var currentName = "";
+  var xmlTextValue = "";
+
+  try {
+    xmlChildren = arguments.itemNode.xmlChildren;
+  } catch (any e) {
+    return "";
+  }
+
+  if (!isArray(xmlChildren)) {
+    return "";
+  }
+
+  for (xmlChild in xmlChildren) {
+    try {
+      currentName = lCase(listLast(xmlChild.xmlName, ":"));
+    } catch (any e) {
+      continue;
+    }
+
+    if (currentName EQ normalizedName) {
+      xmlTextValue = "";
+      try {
+        xmlTextValue = trim(xmlChild.xmlText & "");
+      } catch (any e) {}
+      if (len(xmlTextValue)) {
+        return xmlTextValue;
+      }
+
+      try {
+        xmlTextValue = trim(xmlChild.xmlValue & "");
+      } catch (any e) {}
+      if (len(xmlTextValue)) {
+        return xmlTextValue;
+      }
+
+      try {
+        if (isArray(xmlChild.xmlChildren) AND arrayLen(xmlChild.xmlChildren) GTE 1) {
+          xmlTextValue = trim(xmlChild.xmlChildren[1].xmlValue & "");
+          if (len(xmlTextValue)) {
+            return xmlTextValue;
+          }
+        }
+      } catch (any e) {}
+
+      try {
+        xmlTextValue = trim(toString(xmlChild) & "");
+      } catch (any e) {}
+      if (len(xmlTextValue)) {
+        xmlTextValue = reReplace(xmlTextValue, "(?is)^<[^>]+>|</[^>]+>$", "", "all");
+        xmlTextValue = trim(xmlTextValue);
+        if (len(xmlTextValue)) {
+          return xmlTextValue;
+        }
+      }
+    }
+  }
+
+  return "";
+}
+
+function getXmlAttributeValue(required any itemNode, required string attributeName) {
+  var xmlAttributes = {};
+  var attrKey = "";
+  var normalizedName = lCase(trim(arguments.attributeName & ""));
+
+  try {
+    xmlAttributes = arguments.itemNode.xmlAttributes;
+  } catch (any e) {
+    return "";
+  }
+
+  if (!isStruct(xmlAttributes)) {
+    return "";
+  }
+
+  if (structKeyExists(xmlAttributes, normalizedName)) {
+    return trim(xmlAttributes[normalizedName] & "");
+  }
+
+  for (attrKey in xmlAttributes) {
+    if (lCase(attrKey) EQ normalizedName) {
+      return trim(xmlAttributes[attrKey] & "");
+    }
+  }
+
+  return "";
+}
+
+function normalizeUhcoNewsHref(any hrefValue = "") {
+  var rawHref = trim(arguments.hrefValue & "");
+  if (!len(rawHref)) {
+    return "";
+  }
+  if (left(rawHref, 1) EQ "/") {
+    return "https://www.opt.uh.edu" & rawHref;
+  }
+  return rawHref;
+}
+
+function extractItemBlocksFromXml(required string xmlRaw) {
+  var blocks = [];
+  var searchPos = 1;
+  var openPos = 0;
+  var closePos = 0;
+  var closeTag = "</item>";
+  var blockEnd = 0;
+
+  while (true) {
+    openPos = findNoCase("<item", arguments.xmlRaw, searchPos);
+    if (openPos LTE 0) {
+      break;
+    }
+
+    closePos = findNoCase(closeTag, arguments.xmlRaw, openPos);
+    if (closePos LTE 0) {
+      break;
+    }
+
+    blockEnd = closePos + len(closeTag) - 1;
+    arrayAppend(blocks, mid(arguments.xmlRaw, openPos, (blockEnd - openPos) + 1));
+    searchPos = blockEnd + 1;
+  }
+
+  return blocks;
+}
+
+function extractTagValueFromXmlBlock(required string blockXml, required string tagName) {
+  var openTag = "<" & lCase(trim(arguments.tagName & "")) & ">";
+  var closeTag = "</" & lCase(trim(arguments.tagName & "")) & ">";
+  var searchSource = lCase(arguments.blockXml);
+  var startPos = findNoCase(openTag, searchSource);
+  var contentStart = 0;
+  var endPos = 0;
+
+  if (startPos LTE 0) {
+    return "";
+  }
+
+  contentStart = startPos + len(openTag);
+  endPos = findNoCase(closeTag, searchSource, contentStart);
+  if (endPos LTE 0) {
+    return "";
+  }
+
+  return trim(mid(arguments.blockXml, contentStart, endPos - contentStart));
+}
+
+function extractAttributeValueFromItemBlock(required string blockXml, required string attributeName) {
+  var itemStart = findNoCase("<item", arguments.blockXml);
+  var itemEnd = 0;
+  var itemTag = "";
+  var attrPos = 0;
+  var scanPos = 0;
+  var quoteChar = "";
+  var endPos = 0;
+
+  if (itemStart LTE 0) {
+    return "";
+  }
+
+  itemEnd = find(">", arguments.blockXml, itemStart);
+  if (itemEnd LTE 0) {
+    return "";
+  }
+
+  itemTag = mid(arguments.blockXml, itemStart, (itemEnd - itemStart) + 1);
+  attrPos = findNoCase(arguments.attributeName, itemTag);
+  if (attrPos LTE 0) {
+    return "";
+  }
+
+  scanPos = attrPos + len(arguments.attributeName);
+  while (scanPos LTE len(itemTag) AND trim(mid(itemTag, scanPos, 1)) EQ "") {
+    scanPos = scanPos + 1;
+  }
+  if (scanPos GT len(itemTag) OR mid(itemTag, scanPos, 1) NEQ "=") {
+    return "";
+  }
+
+  scanPos = scanPos + 1;
+  while (scanPos LTE len(itemTag) AND trim(mid(itemTag, scanPos, 1)) EQ "") {
+    scanPos = scanPos + 1;
+  }
+  if (scanPos GT len(itemTag)) {
+    return "";
+  }
+
+  quoteChar = mid(itemTag, scanPos, 1);
+  if (quoteChar NEQ chr(34) AND quoteChar NEQ chr(39)) {
+    return "";
+  }
+
+  endPos = find(quoteChar, itemTag, scanPos + 1);
+  if (endPos LTE 0) {
+    return "";
+  }
+
+  return trim(mid(itemTag, scanPos + 1, endPos - scanPos - 1));
+
+  return "";
+}
+
+newsFeedUrl = "https://www.opt.uh.edu/_resources/data/news.xml";
+</cfscript>
+<cftry>
+  <cfhttp url="#newsFeedUrl#" method="get" result="uhcoNewsHttpResult" throwonerror="false" timeout="20" charset="utf-8"></cfhttp>
+  <cfscript>
+    if (
+      isStruct(uhcoNewsHttpResult)
+      AND structKeyExists(uhcoNewsHttpResult, "statusCode")
+      AND left(trim(uhcoNewsHttpResult.statusCode & ""), 3) EQ "200"
+      AND structKeyExists(uhcoNewsHttpResult, "fileContent")
+      AND len(trim(uhcoNewsHttpResult.fileContent & ""))
+    ) {
+      newsRawXml = uhcoNewsHttpResult.fileContent & "";
+      newsItemBlocks = extractItemBlocksFromXml(newsRawXml);
+
+      if (isArray(newsItemBlocks) AND arrayLen(newsItemBlocks) GT 0) {
+        for (newsItemBlock in newsItemBlocks) {
+          newsItemHref = trim(extractAttributeValueFromItemBlock(newsItemBlock, "href") & "");
+          newsItemTitle = trim(extractTagValueFromXmlBlock(newsItemBlock, "title") & "");
+          newsItemPubDate = trim(extractTagValueFromXmlBlock(newsItemBlock, "pubDate") & "");
+          newsItemFullHref = normalizeUhcoNewsHref(newsItemHref);
+
+          if (len(newsItemTitle) AND len(newsItemFullHref)) {
+            arrayAppend(uhcoNewsItems, {
+              title = newsItemTitle,
+              href = newsItemFullHref,
+              publishedAt = newsItemPubDate
+            });
+          }
+        }
+      }
+
+      cflog(file = "myuhco-news", type = "information", text = "Index UHCO news parsed items count: #arrayLen(uhcoNewsItems)#");
+    } else {
+      cflog(file = "myuhco-news", type = "error", text = "Index UHCO news cfhttp returned non-200 or empty payload. status=#structKeyExists(uhcoNewsHttpResult, 'statusCode') ? (uhcoNewsHttpResult.statusCode & '') : 'unknown'#");
+    }
+  </cfscript>
+  <cfcatch type="any">
+    <cflog file="myuhco-news" type="error" text="Index UHCO news cfhttp/xml parse failed: #cfcatch.message# #cfcatch.detail#">
+  </cfcatch>
+</cftry>
+<cfscript>
 
 docsPageSize = 5;
 linksPageSize = 6;
@@ -345,18 +907,255 @@ function buildPageUrl(required string pageParam, required numeric pageValue) {
   return resultUrl;
 }
 
-quickDocs = limitItems(quickDocs, docsPageSize);
-facultyDocs = limitItems(facultyDocs, docsPageSize);
-staffDocs = limitItems(staffDocs, docsPageSize);
-studentDocs = limitItems(studentDocs, docsPageSize);
+function isPdfDocument(required struct docItem) {
+  var hrefValue = "";
+  var categoryValue = "";
+  var sizeValue = "";
 
-quickDocsPage = paginateItems(quickDocs, "qdPage", docsPageSize);
-facultyDocsPage = paginateItems(facultyDocs, "fdPage", docsPageSize);
-staffDocsPage = paginateItems(staffDocs, "sdPage", docsPageSize);
-studentDocsPage = paginateItems(studentDocs, "stdPage", docsPageSize);
+  if (structKeyExists(arguments.docItem, "href")) {
+    hrefValue = lCase(trim(arguments.docItem.href & ""));
+  }
+  if (structKeyExists(arguments.docItem, "category")) {
+    categoryValue = lCase(trim(arguments.docItem.category & ""));
+  }
+  if (structKeyExists(arguments.docItem, "size")) {
+    sizeValue = lCase(trim(arguments.docItem.size & ""));
+  }
+
+  if (findNoCase("document-view.cfm", hrefValue) OR findNoCase(".pdf", hrefValue)) {
+    return true;
+  }
+  if (categoryValue EQ "pdf" OR findNoCase("pdf", sizeValue)) {
+    return true;
+  }
+  return false;
+}
+
+function buildDocumentLink(required struct docItem) {
+  var hrefValue = "";
+
+  if (structKeyExists(arguments.docItem, "href")) {
+    hrefValue = trim(arguments.docItem.href & "");
+  }
+
+  if (!len(hrefValue) OR hrefValue EQ "##") {
+    return hrefValue;
+  }
+  if (findNoCase("document-view.cfm", hrefValue)) {
+    return hrefValue;
+  }
+  if (isPdfDocument(arguments.docItem)) {
+    return "document-view.cfm?url=" & urlEncodedFormat(hrefValue);
+  }
+  return hrefValue;
+}
+
+function applyDocumentLinks(required array docs) {
+  var i = 0;
+  for (i = 1; i LTE arrayLen(arguments.docs); i = i + 1) {
+    if (isStruct(arguments.docs[i])) {
+      arguments.docs[i].href = buildDocumentLink(arguments.docs[i]);
+    }
+  }
+}
+
+function getDocumentIconClass(required struct docItem) {
+  var hrefValue = "";
+  var titleValue = "";
+  var categoryValue = "";
+  var haystack = "";
+
+  if (structKeyExists(arguments.docItem, "href")) {
+    hrefValue = lCase(arguments.docItem.href & "");
+  }
+  if (structKeyExists(arguments.docItem, "title")) {
+    titleValue = lCase(arguments.docItem.title & "");
+  }
+  if (structKeyExists(arguments.docItem, "category")) {
+    categoryValue = lCase(arguments.docItem.category & "");
+  }
+
+  haystack = hrefValue & " " & titleValue & " " & categoryValue;
+
+  if (findNoCase("pdf", haystack)) {
+    return "fas fa-file-pdf";
+  }
+  if (findNoCase("doc", haystack) OR findNoCase("docx", haystack)) {
+    return "fas fa-file-word";
+  }
+  if (findNoCase("xls", haystack) OR findNoCase("xlsx", haystack) OR findNoCase("csv", haystack)) {
+    return "fas fa-file-excel";
+  }
+  if (findNoCase("ppt", haystack) OR findNoCase("pptx", haystack)) {
+    return "fas fa-file-powerpoint";
+  }
+  if (findNoCase("zip", haystack) OR findNoCase("rar", haystack) OR findNoCase("7z", haystack)) {
+    return "fas fa-file-archive";
+  }
+  if (findNoCase("image", haystack) OR findNoCase("jpg", haystack) OR findNoCase("jpeg", haystack) OR findNoCase("png", haystack) OR findNoCase("gif", haystack) OR findNoCase("webp", haystack)) {
+    return "fas fa-file-image";
+  }
+  return "fas fa-file-alt";
+}
+
+function getShortUpdatedLabel(required struct docItem) {
+  var updatedRaw = "";
+  var dateToken = "";
+  var dateParts = [];
+  var ymdParts = [];
+
+  if (structKeyExists(arguments.docItem, "updatedAt")) {
+    updatedRaw = trim(arguments.docItem.updatedAt & "");
+  }
+
+  if (!len(updatedRaw)) {
+    return "";
+  }
+
+  dateToken = listFirst(updatedRaw, " ");
+
+  if (reFind("^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$", dateToken)) {
+    dateParts = listToArray(dateToken, "/");
+    if (arrayLen(dateParts) EQ 3) {
+      return "Upd " & dateParts[1] & "/" & dateParts[2] & "/" & right(dateParts[3], 2);
+    }
+  }
+
+  if (reFind("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", dateToken)) {
+    ymdParts = listToArray(dateToken, "-");
+    if (arrayLen(ymdParts) EQ 3) {
+      return "Upd " & ymdParts[2] & "/" & ymdParts[3] & "/" & right(ymdParts[1], 2);
+    }
+  }
+
+  if (len(dateToken) GT 10) {
+    dateToken = left(dateToken, 10);
+  }
+  return "Upd " & dateToken;
+}
+
+function toTitleCaseWords(required string value) {
+  var cleanedValue = trim(arguments.value & "");
+  var words = [];
+  var resultWords = [];
+  var i = 0;
+  var wordValue = "";
+
+  if (!len(cleanedValue)) {
+    return "";
+  }
+
+  words = listToArray(cleanedValue, " ");
+  for (i = 1; i LTE arrayLen(words); i = i + 1) {
+    wordValue = trim(words[i]);
+    if (len(wordValue)) {
+      arrayAppend(resultWords, uCase(left(wordValue, 1)) & lCase(mid(wordValue, 2, len(wordValue))));
+    }
+  }
+
+  return arrayToList(resultWords, " ");
+}
+
+function getQuickDocDisplayTitle(required struct docItem, numeric maxLen = 20) {
+  var rawTitle = "";
+  var normalizedTitle = "";
+  var truncatedTitle = "";
+  var maxChars = arguments.maxLen;
+
+  if (structKeyExists(arguments.docItem, "title")) {
+    rawTitle = trim(arguments.docItem.title & "");
+  }
+
+  normalizedTitle = reReplace(rawTitle, "[-_]", " ", "all");
+  normalizedTitle = reReplace(normalizedTitle, "\s+", " ", "all");
+  normalizedTitle = toTitleCaseWords(normalizedTitle);
+
+  if (!len(normalizedTitle)) {
+    normalizedTitle = "Untitled Document";
+  }
+
+  truncatedTitle = normalizedTitle;
+  if (len(normalizedTitle) GT maxChars) {
+    truncatedTitle = left(normalizedTitle, maxChars) & "...";
+  }
+
+  return {
+    fullTitle = normalizedTitle,
+    shortTitle = truncatedTitle
+  };
+}
+
+function getRosterSortYear(required struct docItem) {
+  var titleValue = "";
+  var matchData = {};
+
+  if (structKeyExists(arguments.docItem, "title")) {
+    titleValue = trim(arguments.docItem.title & "");
+  }
+
+  if (!len(titleValue)) {
+    return 0;
+  }
+
+  matchData = reFindNoCase("(19|20)\d{2}", titleValue, 1, true);
+  if (structKeyExists(matchData, "match") AND arrayLen(matchData.match) GTE 1 AND len(matchData.match[1])) {
+    return val(matchData.match[1]);
+  }
+
+  return 0;
+}
+
+function sortRosterDocs(required array docs) {
+  var sortedDocs = duplicate(arguments.docs);
+
+  arraySort(sortedDocs, function(leftDoc, rightDoc) {
+    var leftYear = getRosterSortYear(leftDoc);
+    var rightYear = getRosterSortYear(rightDoc);
+
+    if (leftYear LT rightYear) {
+      return -1;
+    }
+    if (leftYear GT rightYear) {
+      return 1;
+    }
+    return compareNoCase(
+      structKeyExists(leftDoc, "title") ? (leftDoc.title & "") : "",
+      structKeyExists(rightDoc, "title") ? (rightDoc.title & "") : ""
+    );
+  });
+
+  return sortedDocs;
+}
+
+for (_dashboardPanel in dashboardPanels) {
+  if (structKeyExists(_dashboardPanel, "column") AND _dashboardPanel.column EQ "sidebar") {
+    arrayAppend(dashboardSidebarPanels, _dashboardPanel);
+  } else {
+    arrayAppend(dashboardMainPanels, _dashboardPanel);
+  }
+}
+
+arraySort(dashboardMainPanels, function(leftPanel, rightPanel) {
+  return leftPanel.sortOrder - rightPanel.sortOrder;
+});
+arraySort(dashboardSidebarPanels, function(leftPanel, rightPanel) {
+  return leftPanel.sortOrder - rightPanel.sortOrder;
+});
+
+// sort newest to oldest by publishedAt (mm/dd/yyyy)
+uhcoNewsItems.sort(function(a, b) {
+  var dA = 0;
+  var dB = 0;
+  try { dA = createDate(listLast(a.publishedAt,"/"), listFirst(a.publishedAt,"/"), listGetAt(a.publishedAt,2,"/")); } catch(any e) {}
+  try { dB = createDate(listLast(b.publishedAt,"/"), listFirst(b.publishedAt,"/"), listGetAt(b.publishedAt,2,"/")); } catch(any e) {}
+  return dateCompare(dB, dA);
+});
+uhcoNewsItems = limitItems(uhcoNewsItems, 5);
+
 collegeFormsPage = paginateItems(collegeFormsLinks, "cfPage", linksPageSize);
 otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
 </cfscript>
+</cfif>
 <cfoutput>
 <!DOCTYPE html>
 <html lang="en">
@@ -372,7 +1171,15 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="assets/plugins/fontawesome-free/css/all.min.css">
-    <link rel="stylesheet" href="css/portal-style.css">
+    <link rel="stylesheet" href="/assets/css/dist/myuhco/portal.css">
+    <cfif dispatchMode EQ "page-render">
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css">
+      <link rel="stylesheet" href="css/pages-platform.css">
+    </cfif>
+
+    <cfloop array="#dashboardStylesheets#" index="dashboardStylesheetHref">
+      <link rel="stylesheet" href="#encodeForHTMLAttribute(dashboardStylesheetHref)#">
+    </cfloop>
 
     <meta property="og:url" content="##" />
     <meta property="og:site_name" content="##" />
@@ -388,345 +1195,321 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
   <body id="MyUHCO">
     <a name="Top" id="Top"></a>
 
-    <div class="mainContainer" id="main">
-      <header class="portal-header border-bottom">
-        <nav class="navbar navbar-expand-lg py-2">
-          <div class="container-xxl">
-            <a class="navbar-brand" href="##" aria-label="MyUHCO Home">
-              <img
-                id="siteLogo"
-                src="assets/images/optopmetry-college-of-optometry-tertiary.svg"
-                class="img-fluid portal-logo"
-                alt="University of Houston College of Optometry">
+    <div class="portal-shell">
+      <aside class="main-sidebar" id="mainSidebar" aria-label="Main sidebar">
+        <div class="main-sidebar-inner">
+          <div class="sidebar-brand uhco-logo"><img src="assets/images/UH-Primary-College-of-Optometry-horizontal.webp" alt="College of Optometry Logo" class="img-fluid"></div>
+          <div class="sidebar-brand uh-logo"><img src="assets/images/uh.png" alt="University of Houston Logo" class="img-fluid"></div>
+          <nav class="nav flex-column sidebar-nav">
+            <a class="nav-link #dispatchMode EQ 'dashboard' ? 'active' : ''#" href="index.cfm">
+              <i class="fas fa-home"></i>
+              <span class="sidebar-link-text">Home</span>
             </a>
+            <cfif arrayLen(_navItems)>
+              <cfset _navCurrentGroup = chr(0)>
+              <cfloop array="#_navItems#" index="_navItem">
+                <cfif _navItem.group NEQ _navCurrentGroup AND len(_navItem.group)>
+                  <cfset _navCurrentGroup = _navItem.group>
+                  <div class="sidebar-nav-group-label">#encodeForHTML(_navCurrentGroup)#</div>
+                </cfif>
+                <a class="nav-link #((_navItem.type EQ 'module' AND _navItem.id EQ _navActiveModule) OR (_navItem.type EQ 'page' AND _navItem.id EQ _navActivePage)) ? 'active' : ''#" href="#encodeForHTMLAttribute(_navItem.href)#"<cfif structKeyExists(_navItem, "target") AND len(trim(_navItem.target & ""))> target="#encodeForHTMLAttribute(_navItem.target)#" rel="#encodeForHTMLAttribute(structKeyExists(_navItem, "rel") ? (_navItem.rel & "") : "noopener noreferrer")#"</cfif>>
+                  <i class="#encodeForHTML(_navItem.icon)#"></i>
+                  <span class="sidebar-link-text">#encodeForHTML(_navItem.label)#</span>
+                </a>
+              </cfloop>
+            </cfif>
+          </nav>
+          
+        </div>
+      </aside>
 
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="##portalNav" aria-controls="portalNav" aria-expanded="false" aria-label="Toggle navigation">
-              <span class="navbar-toggler-icon"></span>
-            </button>
+      <div class="mainContainer flex-grow-1" id="main">
+      <cfinclude template="/includes/portal-header.cfm">
 
-            <div class="collapse navbar-collapse justify-content-end" id="portalNav">
-              <ul class="navbar-nav align-items-lg-center gap-lg-2">
-                <li class="nav-item d-none d-lg-block">
-                  <a class="nav-link p-1" href="/my-uhco/applications/accessuh" target="_blank" data-bs-toggle="tooltip" data-bs-title="Go To AccessUH" aria-label="AccessUH">
-                    <img src="assets/images/46904E6A-93E9-1182-D5CC96AA4A79783F.png" class="ql-images" alt="AccessUH">
-                  </a>
-                </li>
-                <li class="nav-item d-none d-lg-block">
-                  <a class="nav-link p-1" href="/my-uhco/applications/microsoft-365" target="_blank" data-bs-toggle="tooltip" data-bs-title="Go To Microsoft 365" aria-label="Microsoft 365">
-                    <img src="assets/images/46ABFF34-C534-BCDD-7C1AA910244CFBB6.png" class="ql-images" alt="Microsoft 365">
-                  </a>
-                </li>
-                <li class="nav-item d-none d-lg-block">
-                  <a class="nav-link p-1" href="/my-uhco/applications/microsoft-teams" target="_blank" data-bs-toggle="tooltip" data-bs-title="Go To Microsoft Teams" aria-label="Microsoft Teams">
-                    <img src="assets/images/46B6BA2A-F944-46D8-8B7664D3348269DC.png" class="ql-images" alt="Microsoft Teams">
-                  </a>
-                </li>
-                <li class="nav-item ms-lg-2">
-                  <div class="dropdown">
-                    <button class="btn btn-link nav-link dropdown-toggle p-0 d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="User menu">
-                      <cfif structKeyExists(portalUser, "webThumbImage") AND len(portalUser.webThumbImage)>
-                        <img src="#encodeForHTML(portalUser.webThumbImage)#" alt="Profile" class="rounded-circle" style="width: 32px; height: 32px; object-fit: cover;">
-                      <cfelse>
-                        <i class="fa-solid fa-circle-user" style="font-size: 24px;"></i>
-                      </cfif>
-                      <span class="d-none d-lg-inline text-dark small">#encodeForHTML(portalUser.displayName)#</span>
-                    </button>
-
-                    <ul class="dropdown-menu dropdown-menu-end">
-                      <li>
-                        <h6 class="dropdown-header">#encodeForHTML(portalUser.displayName)#</h6>
-                      </li>
-                      <li>
-                        <span class="dropdown-item-text small text-muted">#encodeForHTML(portalUser.email)#</span>
-                      </li>
-                      <cfif structKeyExists(portalUser, "title") AND len(portalUser.title)>
-                        <li>
-                          <span class="dropdown-item-text small text-muted">#encodeForHTML(portalUser.title)#</span>
-                        </li>
-                      </cfif>
-                      <cfif structKeyExists(portalUser, "department") AND len(portalUser.department)>
-                        <li>
-                          <span class="dropdown-item-text small text-muted">#encodeForHTML(portalUser.department)#</span>
-                        </li>
-                      </cfif>
-                      <cfif len(roleDisplay)>
-                        <li>
-                          <span class="dropdown-item-text small text-muted">#encodeForHTML(roleDisplay & gradYearDisplay)#</span>
-                        </li>
-                      </cfif>
-                      <li><hr class="dropdown-divider"></li>
-                      <li>
-                        <a class="dropdown-item" href="profile.cfm">
-                          <i class="fa-solid fa-user me-2"></i>View Profile
-                        </a>
-                      </li>
-                      <cfif canViewSettings>
-                        <li>
-                          <a class="dropdown-item" href="##">
-                            <i class="fa-solid fa-gear me-2"></i>Settings
-                          </a>
-                        </li>
-                      </cfif>
-                      <li><hr class="dropdown-divider"></li>
-                      <li>
-                        <a class="dropdown-item text-danger" href="logout.cfm">
-                          <i class="fa-solid fa-right-from-bracket me-2"></i>Logout
-                        </a>
-                      </li>
-                    </ul>
-                  </div>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </nav>
-      </header>
-
-      <main class="portal-main py-4 py-lg-5">
+      <main class="portal-main py-3 py-lg-5">
+      <cfif dispatchMode EQ "module-include">
+        <cfinclude template="/#activeModule.entryPoint#">
+      <cfelseif dispatchMode EQ "page-render">
         <div class="container-xxl">
-          <div class="card border-0 shadow-sm portal-card mb-4">
+          <div class="card border-0 shadow-sm portal-card pages-platform-card pages-platform-shell">
             <div class="card-body p-4 p-md-5">
-              <h1 class="display-6 fw-semibold mb-2">Welcome to MyUHCO</h1>
-              <p class="lead text-secondary mb-0">Your applications, links, and account tools are now loaded from live service-backed sources.</p>
+              <div class="pages-inline-toolbar">
+                <div>
+                  <cfif len(trim(activePage.summary & ""))>
+                    <div class="text-uppercase small text-muted fw-semibold mb-2">Pages</div>
+                  </cfif>
+                  <h1 class="h3 mb-2">#encodeForHTML(activePage.title & "")#</h1>
+                  <cfif len(trim(activePage.summary & ""))>
+                    <p class="lead mb-0">#encodeForHTML(activePage.summary & "")#</p>
+                  </cfif>
+                </div>
+                <cfif pageInlineAdminAllowed>
+                  <div class="d-flex gap-2 align-items-center">
+                    <div class="pages-inline-meta">Admin page tools</div>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="inlinePageEditToggle"<cfif pageInlineEditing> hidden</cfif>>Quick Edit</button>
+                  </div>
+                </cfif>
+              </div>
+              <cfif len(pageInlineFlashMessage)>
+                <div class="alert alert-#pageInlineFlashType#" role="alert">#encodeForHTML(pageInlineFlashMessage)#</div>
+              </cfif>
+              <cfif NOT pageInlineEditing>
+                <div class="page-content" id="inlinePageRenderedContent">
+                  #activePage.bodyHtml#
+                </div>
+              </cfif>
+              <cfif pageInlineAdminAllowed>
+                <div class="pages-inline-editor" id="inlinePageEditorPanel"<cfif NOT pageInlineEditing> hidden</cfif>>
+                  <div class="pages-inline-editor-header">
+                    <div class="fw-semibold">Inline Page Editor</div>
+                    <div class="small text-muted">This uses the same save pipeline as the admin Pages screen.</div>
+                  </div>
+                  <div class="pages-inline-editor-body">
+                    <form method="post" action="/index.cfm?page=#urlEncodedFormat(activePage.slug)#" class="pages-inline-form">
+                      <input type="hidden" name="_pageInlineAction" value="saveInlinePage">
+                      <input type="hidden" name="pageId" value="#activePage.pageId#">
+                      <input type="hidden" name="slug" value="#encodeForHTMLAttribute(activePage.slug & '')#">
+                      <input type="hidden" name="navLabel" value="#encodeForHTMLAttribute(activePage.navLabel & '')#">
+                      <input type="hidden" name="navSortOrder" value="#int(val(activePage.navSortOrder))#">
+                      <input type="hidden" name="summary" value="#encodeForHTMLAttribute(activePage.summary & '')#">
+                      <cfif activePage.isPublished>
+                        <input type="hidden" name="isPublished" value="1">
+                      </cfif>
+                      <cfif activePage.showInNav>
+                        <input type="hidden" name="showInNav" value="1">
+                      </cfif>
+                      <input type="hidden" name="bodyHtml" id="inlinePageBodyHtml" value="#encodeForHTMLAttribute(activePage.bodyHtml & '')#">
+
+                      <div class="row g-3">
+                        <div class="col-12">
+                          <label for="inlinePageTitle" class="form-label">Title</label>
+                          <input type="text" class="form-control" id="inlinePageTitle" name="title" maxlength="200" value="#encodeForHTMLAttribute(activePage.title & '')#" required>
+                        </div>
+                        <div class="col-12">
+                          <label class="form-label">Body Content</label>
+                          <div class="pages-editor-shell">
+                            <div id="inlinePageEditor">#activePage.bodyHtml#</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="pages-inline-editor-footer d-flex flex-wrap gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary">Save Page</button>
+                        <button type="button" class="btn btn-outline-secondary" id="inlinePageEditorCancel">Cancel</button>
+                        <a href="/admin/pages/?id=#activePage.pageId#" class="btn btn-outline-dark">Open In Admin</a>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </cfif>
             </div>
           </div>
-
-          <div class="row g-4">
+        </div>
+      <cfelseif dispatchMode NEQ "dashboard">
+        <div class="container-fluid">
+          <div class="row justify-content-center mt-5">
+            <div class="col-md-6">
+              <div class="alert #(dispatchMode EQ 'error-403') ? 'alert-danger' : 'alert-warning'#" role="alert">
+                <cfif dispatchMode EQ "error-404">
+                  <strong>404 &mdash; Not Found.</strong> The page you requested does not exist.
+                <cfelseif dispatchMode EQ "error-503">
+                  <strong>503 &mdash; Unavailable.</strong> This page is temporarily disabled for maintenance.
+                <cfelse>
+                  <strong>403 &mdash; Access Denied.</strong> You do not have permission to access this page.
+                </cfif>
+                <div class="mt-2"><a href="index.cfm" class="alert-link">Return to Dashboard</a></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      <cfelse>
+        <div class="container-fluid">
+          <div class="row g-4 mb-3">
             <div class="col-12">
               <section class="card border-0 shadow-sm portal-card">
                 <div class="card-body p-4">
-                  <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2 class="h4 mb-0">Directory</h2>
-                  </div>
-                  <div class="btn-group mb-3" role="group" aria-label="Directory groups">
-                    <button type="button" class="btn btn-outline-primary btn-sm directory-group-btn" data-group="faculty">Faculty</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm directory-group-btn" data-group="staff">Staff</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm directory-group-btn" data-group="students">Students</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm directory-group-btn" data-group="alumni">Alumni</button>
-                  </div>
-
-                  <div id="dirGradFilterWrap" class="mb-2" style="display:none;">
-                    <label class="small mb-1" for="dirGradFilter">Class of</label>
-                    <select id="dirGradFilter" class="form-select form-select-sm" aria-label="Select class year">
-                      <option value="">Select class year to load...</option>
-                    </select>
-                  </div>
-
-                  <div id="directoryStatus" class="alert alert-secondary py-2" role="status">Click a group to load.</div>
-                  <div id="directoryTableWrap" style="display:none;">
-                    <div class="mb-2">
-                      <input type="search" id="dirSearch" class="form-control form-control-sm" placeholder="Search by last name..." autocomplete="off">
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                      <div class="small text-muted" id="dirPageInfo"></div>
-                      <div class="d-flex align-items-center gap-2">
-                        <label class="small mb-0" for="dirPageSize">Per page:</label>
-                        <select id="dirPageSize" class="form-select form-select-sm" style="width:auto;">
-                          <option value="10">10</option>
-                          <option value="25" selected>25</option>
-                          <option value="50">50</option>
-                          <option value="200">All</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div class="table-responsive">
-                      <table id="directoryTable" class="table table-sm table-hover align-middle mb-2">
-                        <thead id="directoryThead"></thead>
-                        <tbody id="directoryTbody"></tbody>
-                      </table>
-                    </div>
-                    <div id="dirPagination" class="d-flex justify-content-center mt-1"></div>
-                  </div>
-
-                  <div class="modal fade" id="dirProfileModal" tabindex="-1" aria-labelledby="dirProfileModalLabel" aria-hidden="true">
-                    <div class="modal-dialog modal-dialog-centered">
-                      <div class="modal-content">
-                        <div class="modal-header">
-                          <h5 class="modal-title" id="dirProfileModalLabel">Profile</h5>
-                          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                        </div>
-                        <div class="modal-body" id="dirProfileModalBody"></div>
-                      </div>
-                    </div>
-                  </div>
+                  <h1 class="h3 mb-3"></h1>
+                  <p class="mb-0">Specific User Messaging</p>
                 </div>
               </section>
             </div>
-
-            <div class="col-12 col-xl-6">
-              <section class="card border-0 shadow-sm portal-card h-100">
-                <div class="card-body p-4">
-                  <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2 class="h4 mb-0">Documents</h2>
-                    <span class="badge bg-light text-dark">#documentResult.success ? documentsCount : 0# loaded</span>
-                  </div>
-
-                  <cfif NOT documentResult.success>
-                    <div class="alert alert-danger mb-0" role="alert">
-                      <strong>Error:</strong> #encodeForHTML(documentResult.message)#
-                    </div>
-                  <cfelseif arrayLen(quickDocs) EQ 0 AND arrayLen(facultyDocs) EQ 0 AND arrayLen(staffDocs) EQ 0 AND arrayLen(studentDocs) EQ 0>
-                    <div class="alert alert-secondary mb-0" role="alert">
-                      <strong>Empty:</strong> No documents are available.
-                    </div>
-                  <cfelse>
-                    <div class="mb-4">
-                      <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h3 class="h6 text-uppercase text-muted mb-0">Quick Docs</h3>
-                        <cfif structKeyExists(documentResult, "quickDocsFolderUrl") AND len(trim(documentResult.quickDocsFolderUrl & ""))>
-                          <a href="documents.cfm?section=quick-docs" class="btn btn-sm btn-outline-secondary">View All Quick Docs</a>
+          </div>
+          <div class="row g-4">
+            <div class="col-9">
+              <cfloop array="#dashboardMainPanels#" index="dashboardPanel">
+                <section class="card border-0 shadow-sm portal-card mb-4">
+                  <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                      <h2 class="h4 mb-0">#encodeForHTML(dashboardPanel.title)#</h2>
+                      <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-light text-dark">#dashboardPanel.itemCount# item(s)</span>
+                        <cfif len(trim(dashboardPanel.viewAllHref & ""))>
+                          <a href="#encodeForHTMLAttribute(dashboardPanel.viewAllHref)#" class="btn btn-sm btn-outline-secondary">View All</a>
                         </cfif>
                       </div>
-                      <cfif quickDocsPage.totalItems EQ 0>
-                        <p class="small text-secondary mb-0">No quick docs are available.</p>
+                    </div>
+
+                    <cfif dashboardPanel.type EQ "quick-docs-carousel">
+                      <cfif arrayLen(dashboardPanel.items) EQ 0>
+                        <div class="alert alert-secondary mb-0" role="alert">#encodeForHTML(dashboardPanel.emptyMessage)#</div>
                       <cfelse>
-                        <div class="list-group list-group-flush">
-                          <cfloop array="#quickDocsPage.items#" index="docItem">
-                            <a href="#encodeForHTMLAttribute(docItem.href)#" class="list-group-item list-group-item-action px-0" target="_blank" rel="noopener noreferrer">
-                              <div class="d-flex justify-content-between align-items-start">
-                                <div>
-                                  <div class="fw-semibold">#encodeForHTML(docItem.title)#</div>
-                                  <div class="small text-secondary">#encodeForHTML(docItem.description)#</div>
-                                  <div class="small text-muted mt-1">#encodeForHTML(docItem.category)#<cfif len(docItem.updatedAt)> | Updated #encodeForHTML(docItem.updatedAt)#</cfif></div>
+                        <div class="quick-docs-slider-wrap dashboard-carousel" data-dashboard-carousel="true">
+                          <button type="button" class="btn btn-outline-secondary quick-docs-slider-btn" data-dashboard-carousel-prev aria-label="Scroll panel left">
+                            <i class="fas fa-chevron-left"></i>
+                          </button>
+                          <div class="quick-docs-track" data-dashboard-carousel-track aria-label="#encodeForHTMLAttribute(dashboardPanel.title)#">
+                            <cfloop array="#dashboardPanel.items#" index="panelItem">
+                              <article class="quick-docs-item">
+                                <a href="#encodeForHTMLAttribute(panelItem.href)#" class="quick-docs-link" target="#encodeForHTMLAttribute(structKeyExists(panelItem, 'target') ? panelItem.target : '_self')#" rel="noopener noreferrer" title="#encodeForHTMLAttribute(structKeyExists(panelItem, 'fullTitle') ? panelItem.fullTitle : panelItem.title)#" aria-label="#encodeForHTMLAttribute(structKeyExists(panelItem, 'fullTitle') ? panelItem.fullTitle : panelItem.title)#">
+                                  <div class="quick-docs-tile">
+                                    <cfif structKeyExists(panelItem, "icon") AND len(trim(panelItem.icon & ""))>
+                                      <div class="quick-docs-icon"><i class="#encodeForHTML(panelItem.icon)#"></i></div>
+                                    </cfif>
+                                    <div class="quick-docs-name fw-semibold">#encodeForHTML(structKeyExists(panelItem, 'shortTitle') ? panelItem.shortTitle : panelItem.title)#</div>
+                                    <cfif structKeyExists(panelItem, "updatedShort") AND len(trim(panelItem.updatedShort & ""))>
+                                      <div class="quick-docs-updated">#encodeForHTML(panelItem.updatedShort)#</div>
+                                    </cfif>
+                                  </div>
+                                </a>
+                              </article>
+                            </cfloop>
+                          </div>
+                          <button type="button" class="btn btn-outline-secondary quick-docs-slider-btn" data-dashboard-carousel-next aria-label="Scroll panel right">
+                            <i class="fas fa-chevron-right"></i>
+                          </button>
+                        </div>
+                      </cfif>
+                    <cfelseif dashboardPanel.type EQ "link-list" OR dashboardPanel.type EQ "news-feed">
+                      <cfif arrayLen(dashboardPanel.items) EQ 0>
+                        <div class="alert alert-secondary mb-0" role="alert">#encodeForHTML(dashboardPanel.emptyMessage)#</div>
+                      <cfelse>
+                        <ul class="list-group list-group-flush">
+                          <cfloop array="#dashboardPanel.items#" index="panelItem">
+                            <li class="list-group-item px-0">
+                              <a href="#encodeForHTMLAttribute(panelItem.href)#" class="text-decoration-none d-flex justify-content-between align-items-start gap-3" target="#encodeForHTMLAttribute(structKeyExists(panelItem, 'target') ? panelItem.target : '_self')#" rel="noopener noreferrer">
+                                <div class="d-flex align-items-start gap-3">
+                                  <cfif structKeyExists(panelItem, "icon") AND len(trim(panelItem.icon & ""))>
+                                    <i class="#encodeForHTML(panelItem.icon)# text-muted mt-1"></i>
+                                  </cfif>
+                                  <div>
+                                    <div class="fw-semibold">#encodeForHTML(panelItem.title)#</div>
+                                    <cfif structKeyExists(panelItem, "description") AND len(trim(panelItem.description & ""))>
+                                      <div class="small text-secondary">#encodeForHTML(panelItem.description)#</div>
+                                    </cfif>
+                                    <cfif structKeyExists(panelItem, "publishedAt") AND len(trim(panelItem.publishedAt & ""))>
+                                      <div class="small text-muted mt-1">#encodeForHTML(panelItem.publishedAt)#</div>
+                                    </cfif>
+                                  </div>
                                 </div>
-                                <span class="badge text-bg-light">#encodeForHTML(docItem.size)#</span>
+                                <cfif structKeyExists(panelItem, "badge") AND len(trim(panelItem.badge & ""))>
+                                  <span class="badge text-bg-light">#encodeForHTML(panelItem.badge)#</span>
+                                </cfif>
+                              </a>
+                            </li>
+                          </cfloop>
+                        </ul>
+                      </cfif>
+                    <cfelse>
+                      <div class="alert alert-secondary mb-0" role="alert">Unsupported panel type.</div>
+                    </cfif>
+                  </div>
+                </section>
+              </cfloop>
+
+              <section class="card border-0 shadow-sm portal-card mt-4">
+                <div class="card-body p-4">
+                  <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2 class="h4 mb-0">UHCO News</h2>
+                    <span class="badge bg-light text-dark">#arrayLen(uhcoNewsItems)# loaded</span>
+                  </div>
+
+                  <cfif arrayLen(uhcoNewsItems) EQ 0>
+                    <div class="alert alert-secondary mb-0" role="alert">
+                      <strong>Unavailable:</strong> No news items are available right now.
+                    </div>
+                  <cfelse>
+                    <ul class="list-group list-group-flush">
+                      <cfloop array="#uhcoNewsItems#" index="newsItem">
+                        <li class="list-group-item px-0">
+                          <a href="#encodeForHTMLAttribute(newsItem.href)#" class="text-decoration-none fw-semibold" target="_blank" rel="noopener noreferrer">#encodeForHTML(newsItem.title)#</a>
+                          <cfif len(newsItem.publishedAt)>
+                            <div class="small text-muted mt-1">#encodeForHTML(newsItem.publishedAt)#</div>
+                          </cfif>
+                        </li>
+                      </cfloop>
+                    </ul>
+                  </cfif>
+                </div>
+              </section>
+            </div>
+            <div class="col-3">
+              <cfloop array="#dashboardSidebarPanels#" index="dashboardPanel">
+                <section class="card border-0 shadow-sm portal-card mb-4">
+                  <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                      <h2 class="h4 mb-0">#encodeForHTML(dashboardPanel.title)#</h2>
+                      <cfif len(trim(dashboardPanel.viewAllHref & ""))>
+                        <a href="#encodeForHTMLAttribute(dashboardPanel.viewAllHref)#" class="btn btn-sm btn-outline-secondary">View All</a>
+                      </cfif>
+                    </div>
+
+                    <cfif dashboardPanel.type EQ "roster-grid">
+                      <cfif arrayLen(dashboardPanel.items) EQ 0>
+                        <div class="alert alert-secondary mb-0" role="alert">#encodeForHTML(dashboardPanel.emptyMessage)#</div>
+                      <cfelse>
+                        <div class="roster-doc-grid">
+                          <cfloop array="#dashboardPanel.items#" index="panelItem">
+                            <a href="#encodeForHTMLAttribute(panelItem.href)#" class="roster-doc-link" target="#encodeForHTMLAttribute(structKeyExists(panelItem, 'target') ? panelItem.target : '_self')#" rel="noopener noreferrer" title="#encodeForHTMLAttribute(structKeyExists(panelItem, 'fullTitle') ? panelItem.fullTitle : panelItem.title)#" aria-label="#encodeForHTMLAttribute(structKeyExists(panelItem, 'fullTitle') ? panelItem.fullTitle : panelItem.title)#">
+                              <div class="roster-doc-panel">
+                                <cfif structKeyExists(panelItem, "icon") AND len(trim(panelItem.icon & ""))>
+                                  <div class="roster-doc-icon"><i class="#encodeForHTML(panelItem.icon)#"></i></div>
+                                </cfif>
+                                <div class="roster-doc-title fw-semibold">#encodeForHTML(structKeyExists(panelItem, 'fullTitle') ? panelItem.fullTitle : panelItem.title)#</div>
+                                <cfif structKeyExists(panelItem, "updatedShort") AND len(trim(panelItem.updatedShort & ""))>
+                                  <div class="roster-doc-updated">#encodeForHTML(panelItem.updatedShort)#</div>
+                                </cfif>
                               </div>
                             </a>
                           </cfloop>
                         </div>
-                        <cfif quickDocsPage.totalPages GT 1>
-                          <div class="d-flex justify-content-between align-items-center mt-2">
-                            <a href="#encodeForHTMLAttribute(buildPageUrl('qdPage', quickDocsPage.prevPage))#" class="btn btn-sm btn-outline-secondary #quickDocsPage.hasPrev ? '' : 'disabled'#">Previous</a>
-                            <span class="small text-muted">Page #quickDocsPage.currentPage# of #quickDocsPage.totalPages#</span>
-                            <a href="#encodeForHTMLAttribute(buildPageUrl('qdPage', quickDocsPage.nextPage))#" class="btn btn-sm btn-outline-secondary #quickDocsPage.hasNext ? '' : 'disabled'#">Next</a>
-                          </div>
-                        </cfif>
                       </cfif>
-                    </div>
-
-                    <cfif canSeeAllUserTypeDocs OR userTypeKey EQ "faculty">
-                      <div class="mb-4">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                          <h3 class="h6 text-uppercase text-muted mb-0">Faculty Documents</h3>
-                          <a href="documents.cfm?section=faculty" class="btn btn-sm btn-outline-secondary">View All Faculty Docs</a>
-                        </div>
-                        <cfif facultyDocsPage.totalItems EQ 0>
-                          <p class="small text-secondary mb-0">No faculty documents available.</p>
-                        <cfelse>
-                          <div class="list-group list-group-flush">
-                            <cfloop array="#facultyDocsPage.items#" index="docItem">
-                              <a href="#encodeForHTMLAttribute(docItem.href)#" class="list-group-item list-group-item-action px-0" target="_blank" rel="noopener noreferrer">
-                                <div class="d-flex justify-content-between align-items-start">
-                                  <div>
-                                    <div class="fw-semibold">#encodeForHTML(docItem.title)#</div>
-                                    <div class="small text-secondary">#encodeForHTML(docItem.description)#</div>
-                                    <div class="small text-muted mt-1">#encodeForHTML(docItem.category)#<cfif len(docItem.updatedAt)> | Updated #encodeForHTML(docItem.updatedAt)#</cfif></div>
-                                  </div>
-                                  <span class="badge text-bg-light">#encodeForHTML(docItem.size)#</span>
-                                </div>
-                              </a>
-                            </cfloop>
-                          </div>
-                          <cfif facultyDocsPage.totalPages GT 1>
-                            <div class="d-flex justify-content-between align-items-center mt-2">
-                              <a href="#encodeForHTMLAttribute(buildPageUrl('fdPage', facultyDocsPage.prevPage))#" class="btn btn-sm btn-outline-secondary #facultyDocsPage.hasPrev ? '' : 'disabled'#">Previous</a>
-                              <span class="small text-muted">Page #facultyDocsPage.currentPage# of #facultyDocsPage.totalPages#</span>
-                              <a href="#encodeForHTMLAttribute(buildPageUrl('fdPage', facultyDocsPage.nextPage))#" class="btn btn-sm btn-outline-secondary #facultyDocsPage.hasNext ? '' : 'disabled'#">Next</a>
-                            </div>
-                          </cfif>
-                        </cfif>
-                      </div>
+                    <cfelseif arrayLen(dashboardPanel.items) EQ 0>
+                      <div class="alert alert-secondary mb-0" role="alert">#encodeForHTML(dashboardPanel.emptyMessage)#</div>
+                    <cfelse>
+                      <ul class="list-group list-group-flush">
+                        <cfloop array="#dashboardPanel.items#" index="panelItem">
+                          <li class="list-group-item px-0">
+                            <a href="#encodeForHTMLAttribute(panelItem.href)#" class="text-decoration-none d-flex justify-content-between align-items-start gap-2" target="#encodeForHTMLAttribute(structKeyExists(panelItem, 'target') ? panelItem.target : '_self')#" rel="noopener noreferrer">
+                              <div>
+                                <div class="fw-semibold">#encodeForHTML(panelItem.title)#</div>
+                                <cfif structKeyExists(panelItem, "description") AND len(trim(panelItem.description & ""))>
+                                  <div class="small text-secondary">#encodeForHTML(panelItem.description)#</div>
+                                </cfif>
+                                <cfif structKeyExists(panelItem, "publishedAt") AND len(trim(panelItem.publishedAt & ""))>
+                                  <div class="small text-muted mt-1">#encodeForHTML(panelItem.publishedAt)#</div>
+                                </cfif>
+                              </div>
+                              <cfif structKeyExists(panelItem, "badge") AND len(trim(panelItem.badge & ""))>
+                                <span class="badge text-bg-light">#encodeForHTML(panelItem.badge)#</span>
+                              </cfif>
+                            </a>
+                          </li>
+                        </cfloop>
+                      </ul>
                     </cfif>
+                  </div>
+                </section>
+              </cfloop>
 
-                    <cfif canSeeAllUserTypeDocs OR userTypeKey EQ "staff">
-                      <div class="mb-4">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                          <h3 class="h6 text-uppercase text-muted mb-0">Staff Documents</h3>
-                          <a href="documents.cfm?section=staff" class="btn btn-sm btn-outline-secondary">View All Staff Docs</a>
-                        </div>
-                        <cfif staffDocsPage.totalItems EQ 0>
-                          <p class="small text-secondary mb-0">No staff documents available.</p>
-                        <cfelse>
-                          <div class="list-group list-group-flush">
-                            <cfloop array="#staffDocsPage.items#" index="docItem">
-                              <a href="#encodeForHTMLAttribute(docItem.href)#" class="list-group-item list-group-item-action px-0" target="_blank" rel="noopener noreferrer">
-                                <div class="d-flex justify-content-between align-items-start">
-                                  <div>
-                                    <div class="fw-semibold">#encodeForHTML(docItem.title)#</div>
-                                    <div class="small text-secondary">#encodeForHTML(docItem.description)#</div>
-                                    <div class="small text-muted mt-1">#encodeForHTML(docItem.category)#<cfif len(docItem.updatedAt)> | Updated #encodeForHTML(docItem.updatedAt)#</cfif></div>
-                                  </div>
-                                  <span class="badge text-bg-light">#encodeForHTML(docItem.size)#</span>
-                                </div>
-                              </a>
-                            </cfloop>
-                          </div>
-                          <cfif staffDocsPage.totalPages GT 1>
-                            <div class="d-flex justify-content-between align-items-center mt-2">
-                              <a href="#encodeForHTMLAttribute(buildPageUrl('sdPage', staffDocsPage.prevPage))#" class="btn btn-sm btn-outline-secondary #staffDocsPage.hasPrev ? '' : 'disabled'#">Previous</a>
-                              <span class="small text-muted">Page #staffDocsPage.currentPage# of #staffDocsPage.totalPages#</span>
-                              <a href="#encodeForHTMLAttribute(buildPageUrl('sdPage', staffDocsPage.nextPage))#" class="btn btn-sm btn-outline-secondary #staffDocsPage.hasNext ? '' : 'disabled'#">Next</a>
-                            </div>
-                          </cfif>
-                        </cfif>
-                      </div>
-                    </cfif>
-
-                    <cfif canSeeAllUserTypeDocs OR userTypeKey EQ "students">
-                      <div>
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                          <h3 class="h6 text-uppercase text-muted mb-0">Student Documents</h3>
-                          <a href="documents.cfm?section=students" class="btn btn-sm btn-outline-secondary">View All Student Docs</a>
-                        </div>
-                        <cfif studentDocsPage.totalItems EQ 0>
-                          <p class="small text-secondary mb-0">No student documents available.</p>
-                        <cfelse>
-                          <div class="list-group list-group-flush">
-                            <cfloop array="#studentDocsPage.items#" index="docItem">
-                              <a href="#encodeForHTMLAttribute(docItem.href)#" class="list-group-item list-group-item-action px-0" target="_blank" rel="noopener noreferrer">
-                                <div class="d-flex justify-content-between align-items-start">
-                                  <div>
-                                    <div class="fw-semibold">#encodeForHTML(docItem.title)#</div>
-                                    <div class="small text-secondary">#encodeForHTML(docItem.description)#</div>
-                                    <div class="small text-muted mt-1">#encodeForHTML(docItem.category)#<cfif len(docItem.updatedAt)> | Updated #encodeForHTML(docItem.updatedAt)#</cfif></div>
-                                  </div>
-                                  <span class="badge text-bg-light">#encodeForHTML(docItem.size)#</span>
-                                </div>
-                              </a>
-                            </cfloop>
-                          </div>
-                          <cfif studentDocsPage.totalPages GT 1>
-                            <div class="d-flex justify-content-between align-items-center mt-2">
-                              <a href="#encodeForHTMLAttribute(buildPageUrl('stdPage', studentDocsPage.prevPage))#" class="btn btn-sm btn-outline-secondary #studentDocsPage.hasPrev ? '' : 'disabled'#">Previous</a>
-                              <span class="small text-muted">Page #studentDocsPage.currentPage# of #studentDocsPage.totalPages#</span>
-                              <a href="#encodeForHTMLAttribute(buildPageUrl('stdPage', studentDocsPage.nextPage))#" class="btn btn-sm btn-outline-secondary #studentDocsPage.hasNext ? '' : 'disabled'#">Next</a>
-                            </div>
-                          </cfif>
-                        </cfif>
-                      </div>
-                    </cfif>
-
-                    <cfif NOT canSeeAllUserTypeDocs AND NOT len(userTypeKey)>
-                      <div>
-                        <p class="small text-secondary mb-0">No role-specific document panel is available for this account.</p>
-                      </div>
-                    </cfif>
-                  </cfif>
-                </div>
-              </section>
-            </div>
-
-            <div class="col-12 col-xl-6">
-              <section class="card border-0 shadow-sm portal-card h-100">
+              <section class="card border-0 shadow-sm portal-card mt-4">
                 <div class="card-body p-4">
                   <div class="d-flex justify-content-between align-items-center mb-3">
                     <h2 class="h4 mb-0">Links</h2>
-                    <span class="badge bg-light text-dark">#linksResult.success ? linksCount : 0# loaded</span>
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="badge bg-light text-dark">#linksResult.success ? linksCount : 0# loaded</span>
+                      <a href="index.cfm?module=links" class="btn btn-sm btn-outline-secondary">View All</a>
+                    </div>
                   </div>
-
-                  <cfif len(linksFlashMessage)>
-                    <div class="alert #linksFlashStatus EQ "success" ? "alert-success" : "alert-danger"# py-2" role="alert">#encodeForHTML(linksFlashMessage)#</div>
-                  </cfif>
 
                   <cfif NOT linksResult.success>
                     <div class="alert alert-danger mb-0" role="alert">
@@ -762,20 +1545,6 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
 
                     <div>
                       <h3 class="h6 text-uppercase text-muted mb-2">Other Links</h3>
-                      <form method="post" action="index.cfm" class="row g-2 mb-3">
-                        <input type="hidden" name="linkAction" value="create">
-                        <input type="hidden" name="olPage" value="#otherLinksPage.currentPage#">
-                        <div class="col-12 col-md-5">
-                          <input type="text" name="linkTitle" class="form-control" maxlength="120" placeholder="Link title" required>
-                        </div>
-                        <div class="col-12 col-md-5">
-                          <input type="url" name="linkHref" class="form-control" maxlength="1000" placeholder="https://example.com" required>
-                        </div>
-                        <div class="col-12 col-md-2 d-grid">
-                          <button type="submit" class="btn btn-primary">Save</button>
-                        </div>
-                      </form>
-
                       <cfif otherLinksPage.totalItems EQ 0>
                         <p class="small text-secondary mb-0">No other links are configured.</p>
                       <cfelse>
@@ -783,17 +1552,7 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
                           <cfloop array="#otherLinksPage.items#" index="linkItem">
                             <li class="list-group-item px-0 d-flex align-items-center justify-content-between gap-2">
                               <a href="#encodeForHTMLAttribute(linkItem.href)#" class="text-decoration-none" target="_blank" rel="noopener noreferrer">#encodeForHTML(linkItem.title)#</a>
-                              <div class="d-flex align-items-center gap-2">
-                                <span class="badge #linkItem.source EQ "user" ? "text-bg-primary" : "text-bg-light"#">#encodeForHTML(linkItem.source)#</span>
-                                <cfif linkItem.source EQ "user">
-                                  <form method="post" action="index.cfm" class="m-0">
-                                    <input type="hidden" name="linkAction" value="delete">
-                                    <input type="hidden" name="linkId" value="#encodeForHTMLAttribute(linkItem.id)#">
-                                    <input type="hidden" name="olPage" value="#otherLinksPage.currentPage#">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
-                                  </form>
-                                </cfif>
-                              </div>
+                              <span class="badge #linkItem.source EQ "user" ? "text-bg-primary" : "text-bg-light"#">#encodeForHTML(linkItem.source)#</span>
                             </li>
                           </cfloop>
                         </ul>
@@ -812,18 +1571,79 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
             </div>
           </div>
         </div>
+      </cfif><!--- end dispatch branch --->
       </main>
+      </div>
     </div>
 
+    <cfif dispatchMode EQ "page-render">
+      <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
+    </cfif>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <cfloop array="#dashboardScripts#" index="dashboardScriptSrc">
+      <script src="#encodeForHTMLAttribute(dashboardScriptSrc)#"></script>
+    </cfloop>
     <script>
       document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
         new bootstrap.Tooltip(el);
       });
 
       (function () {
-        var STUDENT_YEAR_OPTIONS = #serializeJSON(studentGradYears)#;
-        var ALUMNI_YEAR_OPTIONS = #serializeJSON(alumniGradYears)#;
+        var inlineEditorHost = document.getElementById('inlinePageEditor');
+        var inlineBodyField = document.getElementById('inlinePageBodyHtml');
+        var inlineForm = document.querySelector('.pages-inline-form');
+        var inlinePanel = document.getElementById('inlinePageEditorPanel');
+        var inlineToggle = document.getElementById('inlinePageEditToggle');
+        var inlineCancel = document.getElementById('inlinePageEditorCancel');
+        var inlineRenderedContent = document.getElementById('inlinePageRenderedContent');
+        var inlineEditor = null;
+
+        if (inlineEditorHost && inlineBodyField && typeof Quill !== 'undefined') {
+          inlineEditor = new Quill(inlineEditorHost, {
+            theme: 'snow',
+            modules: {
+              toolbar: [
+                [{ header: [1, 2, 3, false] }],
+                ['bold', 'italic', 'underline', 'strike'],
+                [{ list: 'ordered' }, { list: 'bullet' }],
+                ['link', 'blockquote', 'code-block'],
+                [{ align: [] }],
+                ['clean']
+              ]
+            }
+          });
+        }
+
+        if (inlineForm) {
+          inlineForm.addEventListener('submit', function () {
+            if (inlineEditor && inlineBodyField) {
+              inlineBodyField.value = inlineEditor.root.innerHTML;
+            }
+          });
+        }
+
+        if (inlineToggle && inlinePanel) {
+          inlineToggle.addEventListener('click', function () {
+            inlinePanel.hidden = false;
+            inlineToggle.hidden = true;
+            if (inlineRenderedContent) {
+              inlineRenderedContent.hidden = true;
+            }
+          });
+        }
+
+        if (inlineCancel && inlinePanel && inlineToggle) {
+          inlineCancel.addEventListener('click', function () {
+            inlinePanel.hidden = true;
+            inlineToggle.hidden = false;
+            if (inlineRenderedContent) {
+              inlineRenderedContent.hidden = false;
+            }
+          });
+        }
+
+        var STUDENT_YEAR_OPTIONS = <cfif dispatchMode EQ "dashboard">#serializeJSON(studentGradYears)#<cfelse>[]</cfif>;
+        var ALUMNI_YEAR_OPTIONS  = <cfif dispatchMode EQ "dashboard">#serializeJSON(alumniGradYears)#<cfelse>[]</cfif>;
 
         var statusEl     = document.getElementById('directoryStatus');
         var wrapEl       = document.getElementById('directoryTableWrap');
@@ -835,9 +1655,22 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
         var searchEl     = document.getElementById('dirSearch');
         var gradFilterWrapEl = document.getElementById('dirGradFilterWrap');
         var gradFilterEl = document.getElementById('dirGradFilter');
-        var profileModal = new bootstrap.Modal(document.getElementById('dirProfileModal'));
+        var viewTableBtn = document.getElementById('dirViewTable');
+        var viewCardsBtn = document.getElementById('dirViewCards');
+        var cardGridEl   = document.getElementById('dirCardGrid');
+        var tableEl      = document.getElementById('directoryTable');
+        var profileModalEl = document.getElementById('dirProfileModal');
+        var profileModal = profileModalEl ? new bootstrap.Modal(profileModalEl) : null;
         var profileTitle = document.getElementById('dirProfileModalLabel');
         var profileBody  = document.getElementById('dirProfileModalBody');
+
+        var hasDirectoryUi = !!(
+          statusEl && wrapEl && theadEl && tbodyEl && pageInfoEl && pagCtrlEl &&
+          pagSizeEl && searchEl && gradFilterWrapEl && gradFilterEl && viewTableBtn &&
+          viewCardsBtn && cardGridEl && tableEl && profileModal && profileTitle && profileBody
+        );
+
+        if (hasDirectoryUi) {
 
         var STUDENT_GROUPS = ['students', 'alumni'];
 
@@ -848,7 +1681,8 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
           gradYear: '',
           sort:     { col: 'lastname', dir: 'asc' },
           page:     1,
-          pageSize: 25
+          pageSize: 25,
+          viewMode: 'table'
         };
 
         function setStatus(kind, msg) {
@@ -1110,6 +1944,87 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
           pagCtrlEl.appendChild(ul);
         }
 
+        function makeInitialsAvatar(name) {
+          var parts = (name || '').trim().split(/\s+/);
+          var initials = parts.length >= 2
+            ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+            : (parts[0] ? parts[0][0].toUpperCase() : '?');
+          var div = document.createElement('div');
+          div.className = 'rounded d-flex align-items-center justify-content-center mb-2 mx-auto text-white fw-semibold';
+          div.style.cssText = 'width:64px;height:64px;font-size:20px;background-color:##6c757d;';
+          div.textContent = initials;
+          return div;
+        }
+
+        function buildCards(pageData) {
+          cardGridEl.innerHTML = '';
+          pageData.forEach(function (p) {
+            var col = document.createElement('div');
+            col.className = 'col-6 col-md-4 col-lg-3';
+            var card = document.createElement('div');
+            card.className = 'card h-100 shadow-sm';
+            card.style.cursor = 'pointer';
+            card.addEventListener('click', function () { openProfile(p); });
+            var cardBody = document.createElement('div');
+            cardBody.className = 'card-body text-center p-3';
+            var thumb = p.webthumburl || p.webthumbimage || p.thumburl || p.thumbnail || '';
+            if (thumb) {
+              var img = document.createElement('img');
+              img.src = thumb;
+              img.alt = '';
+              img.className = 'rounded mb-2 d-block mx-auto';
+              img.style.cssText = 'width:64px;height:64px;object-fit:cover;';
+              (function (imgEl, personName) {
+                imgEl.onerror = function () { imgEl.replaceWith(makeInitialsAvatar(personName)); };
+              }(img, getName(p)));
+              cardBody.appendChild(img);
+            } else {
+              cardBody.appendChild(makeInitialsAvatar(getName(p)));
+            }
+            var nameEl = document.createElement('div');
+            nameEl.className = 'fw-semibold small';
+            nameEl.textContent = state.group === 'faculty' ? getNameWithDegrees(p) : getName(p);
+            cardBody.appendChild(nameEl);
+            // Title line (always shown when available)
+            var titleVal = p.title1 || p.title || p.jobtitle || '';
+            if (isStudentGroup(state.group)) {
+              var gy = p.currentgradyear || p.gradyear || '';
+              titleVal = (p.program || '') + (gy ? ((p.program ? ' \u2022 ' : '') + 'Class of ' + gy) : '');
+            }
+            if (titleVal) {
+              var titleEl = document.createElement('div');
+              titleEl.className = 'text-muted small mt-1';
+              titleEl.textContent = titleVal;
+              cardBody.appendChild(titleEl);
+            }
+            // Email
+            var eml = p.emailprimary || p.email || p.mail || '';
+            if (eml) {
+              var emlEl = document.createElement('div');
+              emlEl.className = 'small mt-1';
+              var emlA = document.createElement('a');
+              emlA.href = 'mailto:' + eml;
+              emlA.className = 'text-decoration-none text-truncate d-block';
+              emlA.style.maxWidth = '100%';
+              emlA.textContent = eml;
+              emlA.addEventListener('click', function (ev) { ev.stopPropagation(); });
+              emlEl.appendChild(emlA);
+              cardBody.appendChild(emlEl);
+            }
+            // Phone
+            var phone = p.phone || p.telephonenumber || p.telephone || '';
+            if (phone) {
+              var phoneEl = document.createElement('div');
+              phoneEl.className = 'small text-muted mt-1';
+              phoneEl.textContent = phone;
+              cardBody.appendChild(phoneEl);
+            }
+            card.appendChild(cardBody);
+            col.appendChild(card);
+            cardGridEl.appendChild(col);
+          });
+        }
+
         function renderCurrent() {
           var term    = state.search.toLowerCase();
           var filtered = state.allData.filter(function (p) {
@@ -1122,8 +2037,18 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
           if (state.page > totalPages) state.page = totalPages;
           var startIdx   = (state.page - 1) * state.pageSize;
           var pageData   = sorted.slice(startIdx, startIdx + state.pageSize);
-          buildHead(cols);
-          buildBody(pageData, cols);
+          if (state.viewMode === 'cards') {
+            tableEl.style.display = 'none';
+            cardGridEl.style.display = '';
+            buildCards(pageData);
+            theadEl.innerHTML = '';
+            tbodyEl.innerHTML = '';
+          } else {
+            tableEl.style.display = '';
+            cardGridEl.style.display = 'none';
+            buildHead(cols);
+            buildBody(pageData, cols);
+          }
           buildPagination(sorted.length, state.page, state.pageSize);
           wrapEl.style.display = '';
         }
@@ -1203,6 +2128,22 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
             });
         }
 
+        viewTableBtn.addEventListener('click', function () {
+          if (state.viewMode === 'table') return;
+          state.viewMode = 'table';
+          viewTableBtn.classList.add('active');
+          viewCardsBtn.classList.remove('active');
+          if (state.allData.length) renderCurrent();
+        });
+
+        viewCardsBtn.addEventListener('click', function () {
+          if (state.viewMode === 'cards') return;
+          state.viewMode = 'cards';
+          viewCardsBtn.classList.add('active');
+          viewTableBtn.classList.remove('active');
+          if (state.allData.length) renderCurrent();
+        });
+
         pagSizeEl.addEventListener('change', function () {
           state.pageSize = parseInt(pagSizeEl.value, 10) || 25;
           state.page = 1;
@@ -1260,6 +2201,19 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
             loadDirectoryGroup(group, '');
           });
         });
+        }
+
+        var sidebarToggle = document.getElementById('sidebarToggle');
+        if (sidebarToggle) {
+          sidebarToggle.addEventListener('click', function () {
+            if (window.innerWidth <= 991) {
+              document.body.classList.toggle('sidebar-open');
+              return;
+            }
+            document.body.classList.toggle('sidebar-collapsed');
+          });
+        }
+
       })();
     </script>
   </body>

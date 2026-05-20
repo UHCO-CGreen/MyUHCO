@@ -1,4 +1,13 @@
-<cfset profileUserId = "">
+<cfif NOT (
+  structKeyExists(session, "user")
+  AND structKeyExists(session.user, "userID")
+  AND isNumeric(session.user.userID)
+  AND session.user.userID GT 0
+)>
+  <cflocation url="/login.cfm" addtoken="false">
+</cfif>
+
+<cfset profileUserId = trim(session.user.userID & "")>
 <cfset profileApiToken = "">
 <cfset profileApiSecret = "">
 <cfset profileApiBaseUrl = "http://127.0.0.1/api/v1">
@@ -7,9 +16,6 @@
 <cfset profileApiError = "">
 <cfset profileApiData = {}>
 
-<cfif structKeyExists(session, "portalUser") AND structKeyExists(session.portalUser, "userId")>
-  <cfset profileUserId = trim(session.portalUser.userId & "")>
-</cfif>
 <cfif structKeyExists(application, "MYUHCO_API_TOKEN")>
   <cfset profileApiToken = trim(application.MYUHCO_API_TOKEN & "")>
 </cfif>
@@ -23,7 +29,7 @@
 <cfset profileApiUrl = profileApiBaseUrl & "/people/" & urlEncodedFormat(profileUserId)>
 
 <cfif NOT len(profileUserId)>
-  <cfset profileApiError = "No userId was found in session.portalUser.">
+  <cfset profileApiError = "No userId was found in session.user.">
 <cfelseif NOT len(profileApiToken) OR NOT len(profileApiSecret)>
   <cfset profileApiError = "API token/secret are not available in application scope.">
 <cfelse>
@@ -33,8 +39,8 @@
       url="#profileApiUrl#"
       result="profileApiResponse"
       timeout="15">
-      <cfhttpparam type="url" name="token" value="#profileApiToken#">
-      <cfhttpparam type="url" name="secret" value="#profileApiSecret#">
+      <cfhttpparam type="header" name="Authorization" value="Bearer #profileApiToken#">
+      <cfhttpparam type="header" name="X-API-Secret" value="#profileApiSecret#">
     </cfhttp>
 
     <cfset profileApiStatus = profileApiResponse.statusCode>
@@ -52,6 +58,12 @@
   </cftry>
 </cfif>
 
+<cfset portalUser = session.user>
+<cfset roleDisplay = "">
+<cfset gradYearDisplay = "">
+<cfset canViewSettings = false>
+<cfset canViewAdminDashboard = structKeyExists(application, "accessService") AND isObject(application.accessService) AND application.accessService.hasPermission("portal.admin")>
+
 <cfoutput>
 <!DOCTYPE html>
 <html lang="en">
@@ -63,48 +75,29 @@
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="assets/plugins/fontawesome-free/css/all.min.css">
-    <link rel="stylesheet" href="css/portal-style.css">
+    <link rel="stylesheet" href="/assets/css/dist/myuhco/portal.css">
     <link rel="shortcut icon" href="assets/images/46904E6A-93E9-1182-D5CC96AA4A79783F.png">
   </head>
   <body id="MyUHCO">
-    <div class="mainContainer" id="main">
-      <header class="portal-header border-bottom">
-        <nav class="navbar navbar-expand-lg py-2">
-          <div class="container-xxl">
-            <a class="navbar-brand" href="index.cfm" aria-label="MyUHCO Home">
-              <img
-                id="siteLogo"
-                src="assets/images/optopmetry-college-of-optometry-tertiary.svg"
-                class="img-fluid portal-logo"
-                alt="University of Houston College of Optometry">
-            </a>
-            <div class="ms-auto">
-              <a class="btn btn-outline-primary btn-sm" href="index.cfm">
-                <i class="fa-solid fa-house me-1"></i>Dashboard
-              </a>
-              <a class="btn btn-outline-danger btn-sm ms-2" href="logout.cfm">
-                <i class="fa-solid fa-right-from-bracket me-1"></i>Logout
-              </a>
-            </div>
-          </div>
-        </nav>
-      </header>
-
-      <main class="portal-main py-4 py-lg-5">
+    <div class="portal-shell">
+      <cfinclude template="/includes/portal-sidebar.cfm">
+      <div class="mainContainer flex-grow-1" id="main">
+        <cfinclude template="/includes/portal-header.cfm">
+        <main class="portal-main py-4 py-lg-5">
         <div class="container-xxl">
           <div class="card border-0 shadow-sm portal-card">
             <div class="card-body p-4 p-md-5">
               <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4">
-                <cfif structKeyExists(session.portalUser, "webProfileImage") AND len(trim(session.portalUser.webProfileImage & ""))>
-                  <img src="#encodeForHTML(session.portalUser.webProfileImage)#" alt="Profile" class="rounded-circle" style="width: 84px; height: 84px; object-fit: cover;">
-                <cfelseif structKeyExists(session.portalUser, "webThumbImage") AND len(trim(session.portalUser.webThumbImage & ""))>
-                  <img src="#encodeForHTML(session.portalUser.webThumbImage)#" alt="Profile" class="rounded-circle" style="width: 84px; height: 84px; object-fit: cover;">
+                <cfif structKeyExists(session.user, "webProfileImage") AND len(trim(session.user.webProfileImage & ""))>
+                  <img src="#encodeForHTML(session.user.webProfileImage)#" alt="Profile" class="rounded-circle" style="width: 84px; height: 84px; object-fit: cover;">
+                <cfelseif structKeyExists(session.user, "webThumbImage") AND len(trim(session.user.webThumbImage & ""))>
+                  <img src="#encodeForHTML(session.user.webThumbImage)#" alt="Profile" class="rounded-circle" style="width: 84px; height: 84px; object-fit: cover;">
                 <cfelse>
-                  <i class="fa-solid fa-circle-user text-secondary" style="font-size: 84px;"></i>
+                  <i class="fas fa-user-circle text-secondary" style="font-size: 84px;"></i>
                 </cfif>
                 <div>
-                  <h1 class="h3 mb-1">#encodeForHTML(session.portalUser.displayName)#</h1>
-                  <p class="text-secondary mb-0">#encodeForHTML(session.portalUser.email)#</p>
+                  <h1 class="h3 mb-1">#encodeForHTML(session.user.displayName)#</h1>
+                  <p class="text-secondary mb-0">#encodeForHTML(session.user.email)#</p>
                 </div>
               </div>
 
@@ -112,37 +105,37 @@
                 <div class="col-md-6">
                   <div class="border rounded p-3 h-100">
                     <div class="small text-muted">Username</div>
-                    <div>#encodeForHTML(session.portalUser.username & "")#</div>
+                    <div>#encodeForHTML(session.user.username & "")#</div>
                   </div>
                 </div>
                 <div class="col-md-6">
                   <div class="border rounded p-3 h-100">
                     <div class="small text-muted">Employee ID</div>
-                    <div>#encodeForHTML(session.portalUser.employeeID & "")#</div>
+                    <div>#encodeForHTML(session.user.employeeID & "")#</div>
                   </div>
                 </div>
                 <div class="col-md-6">
                   <div class="border rounded p-3 h-100">
                     <div class="small text-muted">Title</div>
-                    <div>#encodeForHTML(session.portalUser.title & "")#</div>
+                    <div>#encodeForHTML(session.user.title & "")#</div>
                   </div>
                 </div>
                 <div class="col-md-6">
                   <div class="border rounded p-3 h-100">
                     <div class="small text-muted">Department</div>
-                    <div>#encodeForHTML(session.portalUser.department & "")#</div>
+                    <div>#encodeForHTML(session.user.department & "")#</div>
                   </div>
                 </div>
                 <div class="col-md-6">
                   <div class="border rounded p-3 h-100">
                     <div class="small text-muted">Phone</div>
-                    <div>#encodeForHTML(session.portalUser.phone & "")#</div>
+                    <div>#encodeForHTML(session.user.phone & "")#</div>
                   </div>
                 </div>
                 <div class="col-md-6">
                   <div class="border rounded p-3 h-100">
                     <div class="small text-muted">Current Grad Year</div>
-                    <div>#encodeForHTML(session.portalUser.currentGradYear & "")#</div>
+                    <div>#encodeForHTML(session.user.currentGradYear & "")#</div>
                   </div>
                 </div>
               </div>
@@ -259,8 +252,24 @@
             </div>
           </div>
         </div>
-      </main>
+        </main>
+      </div>
     </div>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) { new bootstrap.Tooltip(el); });
+  (function () {
+    if (localStorage.getItem('sidebarCollapsed') === 'true') { document.body.classList.add('sidebar-collapsed'); }
+    var btn = document.getElementById('sidebarToggle');
+    if (btn) {
+      btn.addEventListener('click', function () {
+        if (window.innerWidth <= 991) { document.body.classList.toggle('sidebar-open'); return; }
+        var collapsed = document.body.classList.toggle('sidebar-collapsed');
+        localStorage.setItem('sidebarCollapsed', String(collapsed));
+      });
+    }
+  }());
+  </script>
   </body>
 </html>
 </cfoutput>

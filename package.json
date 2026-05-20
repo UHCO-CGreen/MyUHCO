@@ -2,8 +2,12 @@
   "name": "myuhco-portal-styles",
   "private": true,
   "scripts": {
-    "build": "sass --no-source-map --style=compressed --load-path=node_modules assets/scss/portal.scss:css/portal-style.css",
-    "watch:styles": "sass --watch --no-source-map --style=expanded --load-path=node_modules assets/scss/portal.scss:css/portal-style.css"
+    "build": "npm run build:styles",
+    "scaffold:css:app": "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/css-platform/scaffold-app.ps1",
+    "build:styles": "sass --no-source-map --style=compressed --load-path=node_modules assets/css/src/apps/myuhco/portal.scss:assets/css/dist/myuhco/portal.css assets/css/src/apps/myuhco/admin.scss:assets/css/dist/myuhco/admin.css assets/css/src/apps/myuhco/pages.scss:assets/css/dist/myuhco/pages.css assets/scss/portal.scss:css/portal-style.css",
+    "build:styles:modern": "sass --no-source-map --style=compressed --load-path=node_modules assets/css/src/apps/myuhco/portal.scss:assets/css/dist/myuhco/portal.css assets/css/src/apps/myuhco/admin.scss:assets/css/dist/myuhco/admin.css assets/css/src/apps/myuhco/pages.scss:assets/css/dist/myuhco/pages.css",
+    "build:styles:legacy": "sass --no-source-map --style=compressed --load-path=node_modules assets/scss/portal.scss:css/portal-style.css",
+    "watch:styles": "sass --watch --no-source-map --style=expanded --load-path=node_modules assets/css/src/apps/myuhco/portal.scss:assets/css/dist/myuhco/portal.css assets/css/src/apps/myuhco/admin.scss:assets/css/dist/myuhco/admin.css assets/css/src/apps/myuhco/pages.scss:assets/css/dist/myuhco/pages.css assets/scss/portal.scss:css/portal-style.css"
   },
   "dependencies": {
     "bootstrap": "^5.3.8"
