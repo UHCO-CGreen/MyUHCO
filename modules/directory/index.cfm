@@ -577,7 +577,7 @@ for (y = alumniEndYear; y GTE alumniStartYear; y = y - 1) {
       wrapEl.style.display = 'none';
       tbodyEl.innerHTML = '';
 
-      var url = '/directory-data.cfm?group=' + encodeURIComponent(group);
+      var url = '/modules/directory/data.cfm?group=' + encodeURIComponent(group);
       if (isStudentGroup(group) && gradYear) {
         url += '&gradyear=' + encodeURIComponent(gradYear);
       }

@@ -922,7 +922,7 @@ function isPdfDocument(required struct docItem) {
     sizeValue = lCase(trim(arguments.docItem.size & ""));
   }
 
-  if (findNoCase("document-view.cfm", hrefValue) OR findNoCase(".pdf", hrefValue)) {
+  if (findNoCase("/modules/documents/view.cfm", hrefValue) OR findNoCase("document-view.cfm", hrefValue) OR findNoCase(".pdf", hrefValue)) {
     return true;
   }
   if (categoryValue EQ "pdf" OR findNoCase("pdf", sizeValue)) {
@@ -941,11 +941,11 @@ function buildDocumentLink(required struct docItem) {
   if (!len(hrefValue) OR hrefValue EQ "##") {
     return hrefValue;
   }
-  if (findNoCase("document-view.cfm", hrefValue)) {
+  if (findNoCase("/modules/documents/view.cfm", hrefValue) OR findNoCase("document-view.cfm", hrefValue)) {
     return hrefValue;
   }
   if (isPdfDocument(arguments.docItem)) {
-    return "document-view.cfm?url=" & urlEncodedFormat(hrefValue);
+    return "/modules/documents/view.cfm?url=" & urlEncodedFormat(hrefValue);
   }
   return hrefValue;
 }
@@ -1174,7 +1174,6 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
     <link rel="stylesheet" href="/assets/css/dist/myuhco/portal.css">
     <cfif dispatchMode EQ "page-render">
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css">
-      <link rel="stylesheet" href="css/pages-platform.css">
     </cfif>
 
     <cfloop array="#dashboardStylesheets#" index="dashboardStylesheetHref">
@@ -2084,7 +2083,7 @@ otherLinksPage = paginateItems(otherLinks, "olPage", linksPageSize);
           wrapEl.style.display = 'none';
           tbodyEl.innerHTML = '';
 
-          var url = 'directory-data.cfm?group=' + encodeURIComponent(group);
+          var url = '/modules/directory/data.cfm?group=' + encodeURIComponent(group);
           if (isStudentGroup(group) && gradYear) {
             url += '&gradyear=' + encodeURIComponent(gradYear);
           }

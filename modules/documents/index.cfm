@@ -107,7 +107,7 @@ function documentsModuleIsPdfDocument(required struct docItem) {
     sizeValue = lCase(trim(arguments.docItem.size & ""));
   }
 
-  if (findNoCase("document-view.cfm", hrefValue) OR findNoCase(".pdf", hrefValue)) {
+  if (findNoCase("/modules/documents/view.cfm", hrefValue) OR findNoCase("document-view.cfm", hrefValue) OR findNoCase(".pdf", hrefValue)) {
     return true;
   }
   if (categoryValue EQ "pdf" OR findNoCase("pdf", sizeValue)) {
@@ -126,11 +126,11 @@ function documentsModuleBuildDocumentLink(required struct docItem) {
   if (!len(hrefValue) OR hrefValue EQ "##") {
     return hrefValue;
   }
-  if (findNoCase("document-view.cfm", hrefValue)) {
+  if (findNoCase("/modules/documents/view.cfm", hrefValue) OR findNoCase("document-view.cfm", hrefValue)) {
     return hrefValue;
   }
   if (documentsModuleIsPdfDocument(arguments.docItem)) {
-    return "document-view.cfm?url=" & urlEncodedFormat(hrefValue);
+    return "/modules/documents/view.cfm?url=" & urlEncodedFormat(hrefValue);
   }
   return hrefValue;
 }

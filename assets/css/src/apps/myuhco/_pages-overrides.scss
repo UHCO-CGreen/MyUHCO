@@ -1,1 +1,231 @@
 // MyUHCO pages-only additions live here.
+
+.pages-platform-shell {
+	--pages-border: #d7dee8;
+	--pages-muted: #5f6b7a;
+	--pages-surface: linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);
+}
+
+.pages-platform-card {
+	background: var(--pages-surface);
+	border: 1px solid var(--pages-border) !important;
+}
+
+.pages-editor-shell {
+	border: 1px solid var(--pages-border);
+	border-radius: 0.75rem;
+	background: #fff;
+	overflow: auto;
+	max-height: calc(100vh - 19rem);
+}
+
+.pages-editor-shell .ql-toolbar.ql-snow {
+	position: sticky;
+	top: 0;
+	z-index: 3;
+	border: 0;
+	border-bottom: 1px solid var(--pages-border);
+	background: #f8fafc;
+}
+
+.pages-editor-shell .ql-container.ql-snow {
+	border: 0;
+	min-height: 18rem;
+	font-size: 0.98rem;
+}
+
+.pages-editor-shell .ql-editor {
+	min-height: 18rem;
+}
+
+.pages-inline-toolbar {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 1rem;
+	margin-bottom: 1.25rem;
+}
+
+.pages-inline-meta {
+	color: var(--pages-muted);
+	font-size: 0.9rem;
+}
+
+.pages-inline-editor {
+	margin-top: 1.5rem;
+	border: 1px solid var(--pages-border);
+	border-radius: 1rem;
+	background: #fff;
+	box-shadow: 0 1rem 2rem rgba(15, 23, 42, 0.08);
+}
+
+.pages-inline-editor[hidden] {
+	display: none !important;
+}
+
+.pages-inline-editor-header {
+	position: sticky;
+	top: 0;
+	z-index: 5;
+	padding: 1rem 1.25rem;
+	border-bottom: 1px solid var(--pages-border);
+	background: #f8fafc;
+}
+
+.pages-inline-editor-body {
+	padding: 1.25rem;
+}
+
+.pages-inline-editor-footer {
+	position: sticky;
+	bottom: 0;
+	z-index: 5;
+	margin: 1.25rem -1.25rem -1.25rem;
+	padding: 1rem 1.25rem;
+	border-top: 1px solid var(--pages-border);
+	background: rgba(248, 250, 252, 0.97);
+	backdrop-filter: blur(6px);
+}
+
+.pages-toggle-card {
+	padding: 0.75rem 0.9rem;
+	border: 1px solid var(--pages-border);
+	border-radius: 0.75rem;
+	background: #fff;
+}
+
+.page-content {
+	font-size: 1rem;
+	line-height: 1.65;
+}
+
+.page-content > :last-child {
+	margin-bottom: 0;
+}
+
+.pages-admin-shell {
+	--pages-border: #d7dee8;
+	--pages-muted: #5f6b7a;
+	--pages-panel-bg: linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);
+}
+
+.pages-admin-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.pages-admin-alert {
+	border-width: 1px;
+}
+
+.pages-admin-card {
+	background: var(--pages-panel-bg);
+	border: 1px solid var(--pages-border) !important;
+}
+
+.pages-admin-form .form-label {
+	font-weight: 600;
+}
+
+.pages-admin-editor {
+	min-height: 22rem;
+	font-family: Consolas, "Courier New", monospace;
+	font-size: 0.95rem;
+}
+
+.pages-admin-toggles {
+	padding: 0.75rem 0.9rem;
+	border: 1px solid var(--pages-border);
+	border-radius: 0.75rem;
+	background: #fff;
+}
+
+.pages-admin-collapsible {
+	border: 1px solid var(--pages-border);
+	border-radius: 0.75rem;
+	background: #fff;
+	padding: 0.9rem 1rem;
+}
+
+.pages-admin-collapse-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
+}
+
+.pages-admin-collapse-toggle::after {
+	content: "\25be";
+	font-size: 0.72rem;
+	transition: transform 0.2s ease;
+}
+
+.pages-admin-collapse-toggle[aria-expanded="true"]::after {
+	transform: rotate(180deg);
+}
+
+.pages-admin-meta-collapse {
+	margin-top: 0.35rem;
+}
+
+.pages-admin-row-form {
+	min-width: 11rem;
+}
+
+.pages-admin-row-form .form-check-label {
+	font-size: 0.92rem;
+}
+
+.pages-admin-table thead th {
+	font-size: 0.78rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--pages-muted);
+	border-bottom: 1px solid var(--pages-border);
+}
+
+.pages-admin-table tbody tr {
+	border-top: 1px solid var(--pages-border);
+}
+
+.pages-admin-table tbody td {
+	background: transparent;
+	padding-top: 0.9rem;
+	padding-bottom: 0.9rem;
+}
+
+.pages-admin-empty {
+	padding: 1rem;
+	border: 1px dashed var(--pages-border);
+	border-radius: 0.75rem;
+	color: var(--pages-muted);
+	background: #fff;
+}
+
+.pages-admin-path {
+	font-family: Consolas, "Courier New", monospace;
+}
+
+@media (max-width: 991.98px) {
+	.pages-inline-toolbar {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+
+	.pages-inline-editor {
+		box-shadow: 0 0.75rem 1.5rem rgba(15, 23, 42, 0.08);
+	}
+
+	.pages-editor-shell .ql-container.ql-snow,
+	.pages-editor-shell .ql-editor {
+		min-height: 14rem;
+	}
+
+	.pages-editor-shell {
+		max-height: none;
+	}
+
+	.pages-admin-editor {
+		min-height: 18rem;
+	}
+}

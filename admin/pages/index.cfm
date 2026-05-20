@@ -129,8 +129,6 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="/assets/plugins/fontawesome-free/css/all.min.css">
   <link rel="stylesheet" href="/assets/css/dist/myuhco/admin.css">
-  <link rel="stylesheet" href="/css/pages-platform.css">
-  <link rel="stylesheet" href="/css/admin-pages.css">
 </head>
 <body>
 <cfset portalUser = session.user>

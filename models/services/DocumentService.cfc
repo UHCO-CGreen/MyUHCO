@@ -776,12 +776,12 @@
     <cfset var cleanUrl = trim(arguments.sourceUrl & "")>
 
     <cfif len(cleanPath)>
-      <cfreturn "document-view.cfm?path=" & urlEncodedFormat(cleanPath)>
+      <cfreturn "/modules/documents/view.cfm?path=" & urlEncodedFormat(cleanPath)>
     </cfif>
 
     <cfif len(cleanUrl)>
       <cfset cleanUrl = normalizePdfHref(cleanUrl)>
-      <cfreturn "document-view.cfm?url=" & urlEncodedFormat(cleanUrl)>
+      <cfreturn "/modules/documents/view.cfm?url=" & urlEncodedFormat(cleanUrl)>
     </cfif>
 
     <cfreturn "">

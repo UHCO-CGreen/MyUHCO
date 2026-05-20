@@ -1,1 +1,0 @@
-<cflocation url="/index.cfm?module=links" addtoken="false">

@@ -103,7 +103,7 @@
     <cfif len(tempPath) AND fileExists(tempPath)>
       <cfset fileDelete(tempPath)>
     </cfif>
-    <cflog file="myuhco-api" type="error" text="document-view.cfm error: #cfcatch.message# | #cfcatch.detail# | path=#requestedPath#">
+    <cflog file="myuhco-api" type="error" text="modules/documents/view.cfm error: #cfcatch.message# | #cfcatch.detail# | path=#requestedPath#">
     <cfheader statuscode="500">
     <cfoutput>Unable to open document.</cfoutput>
   </cfcatch>

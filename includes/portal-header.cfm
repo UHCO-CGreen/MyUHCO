@@ -1,6 +1,6 @@
 <!---
   includes/portal-header.cfm
-  Shared portal navigation header. Included by index.cfm, directory.cfm, etc.
+  Shared portal navigation header. Included by portal and admin templates.
 
   Expects the following page-scope variables to be set before cfinclude:
     portalUser          — session.user struct (session.portalUser alias also set)

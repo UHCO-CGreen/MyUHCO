@@ -315,7 +315,6 @@ component output="false" {
             "/auth/status.cfm",
             "/auth/refresh.cfm",
             "/auth/activity.cfm",
-            "/directory-data.cfm",
             "/modules/directory/data.cfm"
         ];
 
