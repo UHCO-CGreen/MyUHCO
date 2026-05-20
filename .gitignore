@@ -24,6 +24,7 @@ Thumbs.db
 
 # Local build output
 build_output.log
+build_output.txt
 
 # Runtime cache
 data/cache/
